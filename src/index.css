@@ -1,0 +1,19 @@
+@import "tailwindcss";
+
+@theme {
+  --color-surface: #1e1e1e;
+  --color-primary: #a8c7fa;
+  --color-background: #121212;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  background-color: var(--color-background);
+  color: #e0e0e0;
+  overflow: hidden;
+}
