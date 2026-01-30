@@ -38,6 +38,6 @@ jobs:
           source-directory: 'dist'
           destination-github-username: 'Biosxxx'
           destination-repository-name: 'cadautoscript.com'
-          target-directory: 'static/utilities/pipe-notch-generator'
+          target-directory: 'static/utilities/pipe-cutter'
           user-email: 'bot@pvt-game.com'
           target-branch: 'main'
