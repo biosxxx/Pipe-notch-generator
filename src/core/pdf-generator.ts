@@ -42,10 +42,10 @@ export function generatePdf(params: PipeParameters, type: 'pipe' | 'hole'): void
     const contentHeight = maxY;
 
     // 3. Page Setup
-    const marginLeft = 20;
-    const marginRight = 20;
-    const marginTop = 30; // Header
-    const marginBottom = 20;
+    const marginLeft = 12;
+    const marginRight = 12;
+    const marginTop = 8;
+    const marginBottom = 12;
 
     const pageW = contentWidth + marginLeft + marginRight;
     const pageH = contentHeight + marginTop + marginBottom;
@@ -72,14 +72,89 @@ export function generatePdf(params: PipeParameters, type: 'pipe' | 'hole'): void
         y: originY - y
     });
 
-    // 5. Draw Metadata (Header)
-    pdf.setFontSize(10);
-    pdf.text(`File: ${type === 'pipe' ? 'Branch Template (D2)' : 'Hole Template (D1)'}`, marginLeft, 10);
-    pdf.setFontSize(8);
-    pdf.text(`Params: D1=${params.d1}mm, D2=${params.d2}mm, Angle=${params.angle}°, Offset=${params.offset}mm`, marginLeft, 15);
-    pdf.text(`Date: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`, marginLeft, 20);
-    pdf.text(`SCALE 1:1 (Do not scale when printing)`, marginLeft, 25);
-    pdf.text(`Padding: ${params.paddingD2 || 0}mm from bottom`, marginLeft, 30);
+    // 5. Compact Metadata (Inside Template)
+    const fmt = (value: number, digits = 1) => {
+        if (!Number.isFinite(value)) return '0';
+        const fixed = value.toFixed(digits);
+        return fixed.replace(/\.0+$/, '');
+    };
+
+    const padding = type === 'pipe' ? (params.paddingD2 || 0) : (params.paddingD1 || 0);
+    const dateStamp = new Date().toLocaleDateString();
+
+    const infoLines = [
+        `${type === 'pipe' ? 'Branch' : 'Hole'} D${type === 'pipe' ? fmt(params.d2) : fmt(params.d1)}`,
+        `D1 ${fmt(params.d1)}  D2 ${fmt(params.d2)}  A ${fmt(params.angle)}°  Off ${fmt(params.offset)}`,
+        `T ${fmt(params.thickness)}  Gap ${fmt(params.weldingGap)}  Seam ${fmt(params.startAngle)}°  Pad ${fmt(padding)}`,
+        `W ${fmt(contentWidth)}  H ${fmt(contentHeight)}  1:1  ${dateStamp}`,
+    ];
+
+    let infoFontSize = 6;
+    let lineH = 3;
+    pdf.setFontSize(infoFontSize);
+    pdf.setTextColor(0, 0, 0);
+
+    if (type === 'pipe') {
+        const rulerH = 5;
+        const anchorX = minX + contentWidth * 0.06;
+        let curveY = minY;
+        let bestDist = Infinity;
+        for (const p of points) {
+            const dist = Math.abs(p.x - anchorX);
+            if (dist < bestDist) {
+                bestDist = dist;
+                curveY = p.y;
+            }
+        }
+
+        const infoBlockH = infoLines.length * lineH;
+        const maxStartY = Math.max(1, curveY - 1);
+        const availableH = Math.max(0, maxStartY - (rulerH + 1));
+
+        if (availableH > 0 && availableH < infoBlockH) {
+            const scale = availableH / infoBlockH;
+            infoFontSize = Math.max(4, infoFontSize * scale);
+            lineH = Math.max(2, lineH * scale);
+            pdf.setFontSize(infoFontSize);
+        }
+
+        const minStartY = rulerH + 1 + (infoLines.length - 1) * lineH;
+        let startY = Math.min(maxStartY, padding > 0 ? padding - 1 : maxStartY);
+        if (startY < minStartY) {
+            startY = maxStartY;
+        }
+
+        const infoX = anchorX;
+        infoLines.forEach((line, idx) => {
+            const y = startY - idx * lineH;
+            const p = toPage(infoX, y);
+            pdf.text(line, p.x, p.y);
+        });
+    } else {
+        // Hole template: place a compact block near the centroid
+        let cx = 0;
+        let cy = 0;
+        for (const p of points) {
+            cx += p.x;
+            cy += p.y;
+        }
+        cx /= points.length;
+        cy /= points.length;
+
+        const lineH = 3;
+        const centerLines = [
+            `${type === 'pipe' ? 'Branch' : 'Hole'} D${type === 'pipe' ? fmt(params.d2) : fmt(params.d1)}`,
+            `D1 ${fmt(params.d1)}  D2 ${fmt(params.d2)}  A ${fmt(params.angle)}°  Off ${fmt(params.offset)}`,
+            `T ${fmt(params.thickness)}  Gap ${fmt(params.weldingGap)}  W ${fmt(contentWidth)}  H ${fmt(contentHeight)}`,
+            `Pad ${fmt(padding)}  1:1  ${dateStamp}`,
+        ];
+
+        centerLines.forEach((line, idx) => {
+            const y = cy + (centerLines.length - 1 - idx) * lineH;
+            const p = toPage(cx, y);
+            pdf.text(line, p.x, p.y, { align: 'center' });
+        });
+    }
 
     // 6. Draw Contour
     pdf.setLineWidth(0.3);
@@ -139,39 +214,6 @@ export function generatePdf(params: PipeParameters, type: 'pipe' | 'hole'): void
 
         pdf.setDrawColor(0, 0, 0); // Reset
     }
-
-    // 8. Dimensions
-    pdf.setDrawColor(0, 0, 255);
-    pdf.setTextColor(0, 0, 255);
-    pdf.setFontSize(8);
-
-    // Height Dimension
-    // Draw on the right side
-    const dimX = maxX + 5;
-    const dimLineTop = toPage(dimX, maxY);
-    const dimLineBot = toPage(dimX, 0); // From bottom (0) to Top (maxY)
-
-    // Lines
-    pdf.line(dimLineBot.x, dimLineBot.y, dimLineTop.x, dimLineTop.y);
-    // Ticks
-    pdf.line(dimLineBot.x - 1, dimLineBot.y, dimLineBot.x + 1, dimLineBot.y);
-    pdf.line(dimLineTop.x - 1, dimLineTop.y, dimLineTop.x + 1, dimLineTop.y);
-
-    const hText = `H = ${contentHeight.toFixed(1)} mm`;
-    pdf.text(hText, toPage(dimX + 2, contentHeight / 2).x, toPage(dimX + 2, contentHeight / 2).y);
-
-    // Width Dimension
-    // Draw above max Y? 
-    const dimY = maxY + 5;
-    const dimWStart = toPage(minX, dimY);
-    const dimWEnd = toPage(maxX, dimY);
-
-    pdf.line(dimWStart.x, dimWStart.y, dimWEnd.x, dimWEnd.y);
-    pdf.line(dimWStart.x, dimWStart.y - 1, dimWStart.x, dimWStart.y + 1);
-    pdf.line(dimWEnd.x, dimWEnd.y - 1, dimWEnd.x, dimWEnd.y + 1);
-
-    const wText = `W = ${contentWidth.toFixed(1)} mm`;
-    pdf.text(wText, toPage(minX + contentWidth / 2 - 10, dimY + 2).x, toPage(minX + contentWidth / 2 - 10, dimY + 2).y);
 
     // 9. Ruler (The Grid) - For D2
     // Along y=0 to y=5

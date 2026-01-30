@@ -43,17 +43,66 @@ export const Sidebar: React.FC = () => {
     );
 
     const handleDownload = useDownloadAction();
+    const [isExportOpen, setIsExportOpen] = React.useState(false);
+    const exportMenuRef = React.useRef<HTMLDivElement | null>(null);
+    const exportDisabled = !!errorMessage;
+    const maxOffset = React.useMemo(() => {
+        const R1 = d1 / 2;
+        const R2_outer = d2 / 2;
+        const R2_inner = R2_outer - thickness;
+        const R2_calc = Math.max(0, calcByID ? R2_outer : R2_inner);
+        const max = R1 - R2_calc;
+        if (!Number.isFinite(max)) return 0;
+        return Math.max(0, max);
+    }, [d1, d2, thickness, calcByID]);
+
+    const maxOffsetLabel = React.useMemo(() => {
+        if (!Number.isFinite(maxOffset)) return '0';
+        const rounded = Math.round(maxOffset * 100) / 100;
+        return Number.isInteger(rounded) ? `${rounded}` : `${rounded}`;
+    }, [maxOffset]);
+
+    React.useEffect(() => {
+        if (!isExportOpen) return;
+
+        const handleClickOutside = (event: MouseEvent) => {
+            if (!exportMenuRef.current) return;
+            if (!exportMenuRef.current.contains(event.target as Node)) {
+                setIsExportOpen(false);
+            }
+        };
+
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+                setIsExportOpen(false);
+            }
+        };
+
+        document.addEventListener('mousedown', handleClickOutside);
+        document.addEventListener('keydown', handleKeyDown);
+
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+            document.removeEventListener('keydown', handleKeyDown);
+        };
+    }, [isExportOpen]);
+
+    const triggerExport = (type: 'pipe' | 'hole', format: 'dxf' | 'pdf') => {
+        if (exportDisabled) return;
+        setIsExportOpen(false);
+        handleDownload(type, format);
+    };
 
     return (
-        <aside className="h-full w-full md:w-[400px] flex-shrink-0 flex-col overflow-y-auto bg-surface border-r border-[#333] shadow-2xl transition-all z-20 flex">
+        <aside className="w-full md:w-[400px] flex-shrink-0 flex-col bg-surface border-b md:border-b-0 md:border-r border-[#333] shadow-2xl transition-all z-20 flex md:h-full md:overflow-y-auto">
 
             {/* Header */}
-            <div className="p-6 border-b border-white/10 flex-shrink-0">
+            <div className="p-4 md:p-6 border-b border-white/10 flex-shrink-0">
                 <div className="flex items-center gap-3">
-                    <h1 className="text-2xl font-bold text-[#e2e2e2]">Pipe Notch Generator</h1>
+                    <h1 className="text-xl md:text-2xl font-bold text-[#e2e2e2]">Pipe Notch Generator</h1>
                     <span className="text-xs font-semibold text-[#a8c7fa]">V{typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.0'}</span>
                 </div>
-                <p className="mt-2 text-sm text-[#aaaaaa]">
+                <p className="mt-2 text-xs md:text-sm text-[#aaaaaa]">
                     Calculate pipe cutting templates.
                     <br />
                     <span className="text-[#ff3333] font-medium">Red line</span> in 3D — ideal cutting contour.
@@ -61,13 +110,13 @@ export const Sidebar: React.FC = () => {
             </div>
 
             {/* Main Content */}
-            <div className="flex-1 p-6 overflow-y-auto">
+            <div className="flex-1 p-4 md:p-6 md:overflow-y-auto">
 
                 {/* Error Display */}
                 {errorMessage && (
-                    <div className="mb-6 flex items-start gap-3 rounded-lg border border-red-900/50 bg-red-900/20 p-4 text-red-200">
+                    <div className="mb-4 md:mb-6 flex items-start gap-3 rounded-lg border border-red-900/50 bg-red-900/20 p-3 md:p-4 text-red-200">
                         <AlertCircle className="h-5 w-5 flex-shrink-0 text-red-400 mt-0.5" />
-                        <div className="text-sm font-medium">{errorMessage}</div>
+                        <div className="text-xs md:text-sm font-medium">{errorMessage}</div>
                     </div>
                 )}
 
@@ -111,8 +160,13 @@ export const Sidebar: React.FC = () => {
                     <DebouncedInput
                         label="Center Offset"
                         value={offset}
-                        onChange={(val) => updateParam('offset', val)}
-                        helperText="Offset of branch axis from D1 center."
+                        onChange={(val) => {
+                            const clamped = Math.max(-maxOffset, Math.min(maxOffset, val));
+                            updateParam('offset', clamped);
+                        }}
+                        min={-maxOffset}
+                        max={maxOffset}
+                        helperText={`Offset of branch axis from D1 center. Max: +/- ${maxOffsetLabel} mm.`}
                     />
                     <DebouncedInput
                         label="Welding Gap"
@@ -128,7 +182,7 @@ export const Sidebar: React.FC = () => {
                         onChange={(val) => updateParam('startAngle', val)}
                         helperText="Rotates template around pipe axis."
                     />
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
                         <DebouncedInput
                             label="Padding D2 (mm)"
                             value={paddingD2}
@@ -144,49 +198,89 @@ export const Sidebar: React.FC = () => {
             </div>
 
             {/* Footer / Actions */}
-            <div className="p-6 border-t border-white/10 bg-[#1a1a1a] flex-shrink-0 space-y-3">
-                {/* DXF Section */}
-                <div className="space-y-2">
-                    <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">DXF Export</h3>
+            <div className="p-4 md:p-6 border-t border-white/10 bg-[#1a1a1a] flex-shrink-0">
+                <div ref={exportMenuRef} className="relative">
                     <button
-                        onClick={() => handleDownload('pipe', 'dxf')}
-                        className="w-full flex items-center justify-center gap-2 rounded-lg bg-primary py-3 text-sm font-bold text-[#0b1d46] transition-colors hover:bg-blue-300 disabled:opacity-50 disabled:cursor-not-allowed"
-                        disabled={!!errorMessage}
+                        type="button"
+                        onClick={() => setIsExportOpen((open) => !open)}
+                        className="w-full flex items-center justify-center gap-2 rounded-lg bg-primary py-2.5 md:py-3 text-xs md:text-sm font-bold text-[#0b1d46] transition-colors hover:bg-blue-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                        disabled={exportDisabled}
+                        aria-haspopup="menu"
+                        aria-expanded={isExportOpen}
                     >
                         <Download className="h-4 w-4" />
-                        Download Template (D2)
+                        Export
                     </button>
 
-                    <button
-                        onClick={() => handleDownload('hole', 'dxf')}
-                        className="w-full flex items-center justify-center gap-2 rounded-lg border border-white/20 bg-transparent py-3 text-sm font-medium text-primary transition-colors hover:bg-white/5 disabled:opacity-50 disabled:cursor-not-allowed"
-                        disabled={!!errorMessage}
+                    <div
+                        className={`absolute bottom-full mb-3 left-0 right-0 rounded-xl border border-white/10 bg-[#161616] shadow-[0_16px_40px_rgba(0,0,0,0.45)] transition-all duration-150 ${
+                            isExportOpen ? 'opacity-100 translate-y-0 pointer-events-auto' : 'opacity-0 translate-y-2 pointer-events-none'
+                        }`}
+                        role="menu"
                     >
-                        <Download className="h-4 w-4" />
-                        Download Hole Template (D1)
-                    </button>
-                </div>
-
-                {/* PDF Section */}
-                <div className="space-y-2 mt-4 pt-4 border-t border-white/5">
-                    <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">PDF Export (1:1 Scale)</h3>
-                    <button
-                        onClick={() => handleDownload('pipe', 'pdf')}
-                        className="w-full flex items-center justify-center gap-2 rounded-lg bg-red-900/40 border border-red-700/50 py-3 text-sm font-bold text-red-200 transition-colors hover:bg-red-900/60 disabled:opacity-50 disabled:cursor-not-allowed"
-                        disabled={!!errorMessage}
-                    >
-                        <FileText className="h-4 w-4" />
-                        Download PDF (D2)
-                    </button>
-
-                    <button
-                        onClick={() => handleDownload('hole', 'pdf')}
-                        className="w-full flex items-center justify-center gap-2 rounded-lg border border-white/20 bg-transparent py-3 text-sm font-medium text-gray-300 transition-colors hover:bg-white/5 disabled:opacity-50 disabled:cursor-not-allowed"
-                        disabled={!!errorMessage}
-                    >
-                        <FileText className="h-4 w-4" />
-                        Download PDF Hole (D1)
-                    </button>
+                        <div className="px-4 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+                            DXF Export
+                        </div>
+                        <div className="px-3 pb-3 space-y-2">
+                            <button
+                                type="button"
+                                onClick={() => triggerExport('pipe', 'dxf')}
+                                className="w-full flex items-center justify-between gap-3 rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-2 text-left text-xs font-semibold text-blue-100 transition-colors hover:bg-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                                disabled={exportDisabled}
+                                role="menuitem"
+                            >
+                                <span className="flex items-center gap-2">
+                                    <Download className="h-4 w-4" />
+                                    Template (D2)
+                                </span>
+                                <span className="text-[10px] uppercase tracking-wider text-blue-200/70">DXF</span>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => triggerExport('hole', 'dxf')}
+                                className="w-full flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-transparent px-3 py-2 text-left text-xs font-medium text-gray-200 transition-colors hover:bg-white/5 disabled:opacity-50 disabled:cursor-not-allowed"
+                                disabled={exportDisabled}
+                                role="menuitem"
+                            >
+                                <span className="flex items-center gap-2">
+                                    <Download className="h-4 w-4" />
+                                    Hole Template (D1)
+                                </span>
+                                <span className="text-[10px] uppercase tracking-wider text-gray-400">DXF</span>
+                            </button>
+                        </div>
+                        <div className="px-4 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-500 border-t border-white/5">
+                            PDF Export (1:1)
+                        </div>
+                        <div className="px-3 pb-3 space-y-2">
+                            <button
+                                type="button"
+                                onClick={() => triggerExport('pipe', 'pdf')}
+                                className="w-full flex items-center justify-between gap-3 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-left text-xs font-semibold text-red-100 transition-colors hover:bg-red-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                                disabled={exportDisabled}
+                                role="menuitem"
+                            >
+                                <span className="flex items-center gap-2">
+                                    <FileText className="h-4 w-4" />
+                                    Template (D2)
+                                </span>
+                                <span className="text-[10px] uppercase tracking-wider text-red-200/70">PDF</span>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => triggerExport('hole', 'pdf')}
+                                className="w-full flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-transparent px-3 py-2 text-left text-xs font-medium text-gray-200 transition-colors hover:bg-white/5 disabled:opacity-50 disabled:cursor-not-allowed"
+                                disabled={exportDisabled}
+                                role="menuitem"
+                            >
+                                <span className="flex items-center gap-2">
+                                    <FileText className="h-4 w-4" />
+                                    Hole (D1)
+                                </span>
+                                <span className="text-[10px] uppercase tracking-wider text-gray-400">PDF</span>
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
         </aside>

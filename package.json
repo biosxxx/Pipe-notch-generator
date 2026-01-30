@@ -1,7 +1,7 @@
 {
   "name": "pipe-notch-generator",
   "private": true,
-  "version": "b0.21.0",
+  "version": "b0.21.1",
   "type": "module",
   "scripts": {
     "dev": "vite",

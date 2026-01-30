@@ -59,7 +59,7 @@ export const DebouncedInput: React.FC<DebouncedInputProps> = ({
 
     return (
         <div className="flex flex-col gap-1">
-            <label className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+            <label className="text-[10px] md:text-xs font-semibold uppercase tracking-wide text-gray-400">
                 {label}
             </label>
             <input
@@ -67,10 +67,10 @@ export const DebouncedInput: React.FC<DebouncedInputProps> = ({
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
                 step="any"
-                className="w-full rounded bg-black/20 px-3 py-2 text-sm text-[var(--color-primary)] placeholder-white/20 outline-none ring-1 ring-white/10 transition-all focus:bg-black/40 focus:ring-[var(--color-primary)] active:scale-[0.99]"
+                className="w-full rounded bg-black/20 px-3 py-1.5 md:py-2 text-xs md:text-sm text-[var(--color-primary)] placeholder-white/20 outline-none ring-1 ring-white/10 transition-all focus:bg-black/40 focus:ring-[var(--color-primary)] active:scale-[0.99]"
             />
             {helperText && (
-                <p className="text-[10px] text-gray-500">{helperText}</p>
+                <p className="text-[9px] md:text-[10px] text-gray-500">{helperText}</p>
             )}
         </div>
     );

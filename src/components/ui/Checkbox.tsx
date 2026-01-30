@@ -14,7 +14,7 @@ export const Checkbox: React.FC<CheckboxProps> = ({
     helperText,
 }) => {
     return (
-        <div className="mb-4 px-1">
+        <div className="mb-3 md:mb-4 px-1">
             <div className="flex items-center">
                 <input
                     type="checkbox"
@@ -25,13 +25,13 @@ export const Checkbox: React.FC<CheckboxProps> = ({
                 />
                 <label
                     htmlFor={`checkbox-${label.replace(/\s+/g, '-').toLowerCase()}`}
-                    className="ml-3 text-sm text-gray-200 cursor-pointer select-none"
+                    className="ml-3 text-xs md:text-sm text-gray-200 cursor-pointer select-none"
                 >
                     {label}
                 </label>
             </div>
             {helperText && (
-                <p className="mt-1 ml-7 text-xs text-gray-500">{helperText}</p>
+                <p className="mt-1 ml-7 text-[10px] md:text-xs text-gray-500">{helperText}</p>
             )}
         </div>
     );
