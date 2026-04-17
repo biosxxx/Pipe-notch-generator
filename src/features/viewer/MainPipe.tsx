@@ -1,19 +1,27 @@
 import React from 'react';
 import * as THREE from 'three';
+import { findPrimitiveById } from '../../domain/geometry/solids';
 import { useDerivedProject } from '../../hooks/useDerivedProject';
+import { createFrameTransform, getPrimitiveLength } from './solidPreview';
 
 export const MainPipe: React.FC = () => {
-    const { main, connection } = useDerivedProject();
-    const outerRadius = main.outerRadius;
-    const innerRadius = Math.max(main.innerRadius, 0.1);
-    const tubeLength = main.od * 3;
-    const transparentPreview = connection.type === 'set_in';
+    const derivedProject = useDerivedProject();
+    const mainPrimitive = findPrimitiveById(derivedProject.solids, derivedProject.solids.outputs.mainPrimitiveId);
+    if (!mainPrimitive || mainPrimitive.kind !== 'hollow-cylinder') {
+        return null;
+    }
+
+    const transform = createFrameTransform(mainPrimitive.frame);
+    const tubeLength = getPrimitiveLength(mainPrimitive);
+    const outerRadius = mainPrimitive.outerRadius;
+    const innerRadius = Math.max(mainPrimitive.innerRadius, 0.1);
+    const transparentPreview = derivedProject.connection.type === 'set_in';
     const outerOpacity = transparentPreview ? 0.34 : 0.98;
     const innerOpacity = transparentPreview ? 0.2 : 0.9;
 
     return (
-        <group>
-            <mesh renderOrder={1}>
+        <group position={transform.position} quaternion={transform.quaternion}>
+            <mesh renderOrder={1} rotation={[Math.PI / 2, 0, 0]}>
                 <cylinderGeometry args={[outerRadius, outerRadius, tubeLength, 64, 1, true]} />
                 <meshStandardMaterial
                     color="#6a7079"
@@ -30,7 +38,7 @@ export const MainPipe: React.FC = () => {
                     polygonOffsetUnits={1}
                 />
             </mesh>
-            <mesh renderOrder={2}>
+            <mesh renderOrder={2} rotation={[Math.PI / 2, 0, 0]}>
                 <cylinderGeometry args={[innerRadius, innerRadius, tubeLength, 64, 1, true]} />
                 <meshStandardMaterial
                     color="#3b4658"

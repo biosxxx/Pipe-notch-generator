@@ -1,4 +1,5 @@
 import type { PipeParameters } from '../../types';
+import { buildAssemblySolidModel } from '../geometry/solids';
 import type {
     DerivedConnection,
     DerivedPipeSpec,
@@ -68,12 +69,14 @@ export function deriveProject(project: ProjectInput): DerivedProject {
     const branchContourRadius = connection.useOuterBranchContour ? branch.outerRadius : branch.innerRadius;
     const maxOffset = Math.max(0, receiverRadius - Math.max(branchContourRadius, 0));
     const geometry = buildGeometryParams(project, main, branch, connection);
+    const solids = buildAssemblySolidModel(main, branch, connection);
     const validation = validateProject({
         project,
         main,
         branch,
         connection,
         maxOffset,
+        solids,
     });
 
     return {
@@ -82,6 +85,7 @@ export function deriveProject(project: ProjectInput): DerivedProject {
         branch,
         connection,
         geometry,
+        solids,
         limits: {
             maxOffset,
         },

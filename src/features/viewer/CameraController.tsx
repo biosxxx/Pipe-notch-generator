@@ -2,40 +2,43 @@ import React, { useEffect, useRef } from 'react';
 import { useThree } from '@react-three/fiber';
 import { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
 import { useDerivedProject } from '../../hooks/useDerivedProject';
+import { estimateSolidModelBounds } from './solidPreview';
 
 export const CameraController: React.FC = () => {
     const { camera, controls } = useThree();
-    const { main, branch } = useDerivedProject();
+    const { solids, main, branch } = useDerivedProject();
+    const bounds = React.useMemo(() => estimateSolidModelBounds(solids), [solids]);
     const d1 = main.od;
     const d2 = branch.od;
+    const [targetX, targetY, targetZ] = bounds.center;
 
-    // Track D1 to prevent jitter if it changes frequent (though debounced now)
-    const prevD1 = useRef(d1);
+    // Track scene size to prevent jitter if inputs change by tiny amounts.
+    const prevSceneSize = useRef(bounds.size);
     const isFirstRun = useRef(true);
 
     useEffect(() => {
-        const shouldUpdate = isFirstRun.current || Math.abs(d1 - prevD1.current) > 1;
+        const sceneSize = Math.max(bounds.size, d1, d2);
+        const shouldUpdate = isFirstRun.current || Math.abs(sceneSize - prevSceneSize.current) > 1;
 
         if (shouldUpdate && controls) {
             const ctrl = controls as OrbitControlsImpl;
-            const size = Math.max(d1, d2);
-            const dist = size * 2.5 + 50; // +50 for min distance for small objects
+            const dist = sceneSize * 2.35 + 50;
 
-            const x = dist;
-            const y = dist * 0.8;
-            const z = dist;
+            const x = targetX + dist;
+            const y = targetY + dist * 0.78;
+            const z = targetZ + dist;
 
             camera.position.set(x, y, z);
-            camera.lookAt(0, 0, 0);
+            camera.lookAt(targetX, targetY, targetZ);
             camera.updateProjectionMatrix();
 
-            ctrl.target.set(0, 0, 0);
+            ctrl.target.set(targetX, targetY, targetZ);
             ctrl.update();
 
-            prevD1.current = d1;
+            prevSceneSize.current = sceneSize;
             isFirstRun.current = false;
         }
-    }, [d1, d2, camera, controls]);
+    }, [bounds.size, camera, controls, d1, d2, targetX, targetY, targetZ]);
 
     return null;
 };

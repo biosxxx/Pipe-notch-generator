@@ -1,35 +1,41 @@
 import React, { useMemo } from 'react';
 import * as THREE from 'three';
-import { calculateNotchGeometry } from '../../core/geometry-engine';
+import { findPrimitiveById } from '../../domain/geometry/solids';
+import { evaluateReceiverTrimPreview } from '../../domain/geometry/receiverTrimPreview';
 import { useDerivedProject } from '../../hooks/useDerivedProject';
+import { createFrameTransform } from './solidPreview';
 
 export const SeamLine: React.FC = () => {
     const derivedProject = useDerivedProject();
+    const branchPrimitive = findPrimitiveById(derivedProject.solids, derivedProject.solids.outputs.branchPrimitiveId);
+    const branchFrame = branchPrimitive?.kind === 'hollow-cylinder' ? branchPrimitive.frame : null;
+    const transform = branchFrame ? createFrameTransform(branchFrame) : null;
 
     const { points, isValid } = useMemo(() => {
-        const result = calculateNotchGeometry(derivedProject.geometry, 128);
-        if (!result.isValid) return { points: null, isValid: false };
-
-        const segmentCount = 128;
-
-        // Extract first row of vertices (cut edge)
-        const seamPoints: THREE.Vector3[] = [];
-        for (let i = 0; i <= segmentCount; i++) {
-            const v = result.vertices[i];
-            seamPoints.push(new THREE.Vector3(v.x, v.y, v.z));
+        if (!branchFrame) {
+            return { points: null, isValid: false };
         }
 
+        const result = evaluateReceiverTrimPreview(derivedProject.solids, 128);
+        if (!result.isValid) return { points: null, isValid: false };
+
+        const seamPoints = result.cutCurve.map((point) => new THREE.Vector3(point.x, point.y, point.z));
+
         return { points: seamPoints, isValid: true };
-    }, [derivedProject.geometry]);
+    }, [branchFrame, derivedProject.solids]);
 
     const lineObj = useMemo(() => {
         if (!isValid || !points) return null;
         const geo = new THREE.BufferGeometry().setFromPoints(points);
-        const mat = new THREE.LineBasicMaterial({ color: "#ff3333", linewidth: 3 });
+        const mat = new THREE.LineBasicMaterial({ color: '#ff3333', linewidth: 3 });
         return new THREE.Line(geo, mat);
     }, [isValid, points]);
 
-    if (!lineObj) return null;
+    if (!lineObj || !transform) return null;
 
-    return <primitive object={lineObj} />;
+    return (
+        <group position={transform.position} quaternion={transform.quaternion}>
+            <primitive object={lineObj} />
+        </group>
+    );
 };

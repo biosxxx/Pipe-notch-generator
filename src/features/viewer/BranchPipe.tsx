@@ -1,13 +1,22 @@
 import React, { useMemo } from 'react';
 import * as THREE from 'three';
-import { calculateNotchGeometry } from '../../core/geometry-engine';
+import { findPrimitiveById } from '../../domain/geometry/solids';
+import { evaluateReceiverTrimPreview } from '../../domain/geometry/receiverTrimPreview';
 import { useDerivedProject } from '../../hooks/useDerivedProject';
+import { createFrameTransform } from './solidPreview';
 
 export const BranchPipe: React.FC = () => {
     const derivedProject = useDerivedProject();
+    const branchPrimitive = findPrimitiveById(derivedProject.solids, derivedProject.solids.outputs.branchPrimitiveId);
+    const branchFrame = branchPrimitive?.kind === 'hollow-cylinder' ? branchPrimitive.frame : null;
+    const transform = branchFrame ? createFrameTransform(branchFrame) : null;
 
     const { geometry, isValid } = useMemo(() => {
-        const result = calculateNotchGeometry(derivedProject.geometry, 128);
+        if (!branchFrame) {
+            return { geometry: null, isValid: false };
+        }
+
+        const result = evaluateReceiverTrimPreview(derivedProject.solids, 128);
 
         if (!result.isValid) {
             return { geometry: null, isValid: false };
@@ -29,26 +38,28 @@ export const BranchPipe: React.FC = () => {
         geo.computeVertexNormals();
 
         return { geometry: geo, isValid: true };
-    }, [derivedProject.geometry]);
+    }, [branchFrame, derivedProject.solids]);
 
     // Conditional rendering of mesh
     const meshComponent = useMemo(() => {
-        if (!isValid || !geometry) return null;
+        if (!isValid || !geometry || !transform) return null;
         return (
-            <mesh geometry={geometry}>
-                <meshStandardMaterial
-                    color="#2f7eff"
-                    roughness={0.24}
-                    metalness={0.42}
-                    emissive="#0b1d45"
-                    emissiveIntensity={0.28}
-                    side={THREE.DoubleSide}
-                    transparent={derivedProject.connection.type === 'set_in'}
-                    opacity={derivedProject.connection.type === 'set_in' ? 0.96 : 1}
-                />
-            </mesh>
+            <group position={transform.position} quaternion={transform.quaternion}>
+                <mesh geometry={geometry}>
+                    <meshStandardMaterial
+                        color="#2f7eff"
+                        roughness={0.24}
+                        metalness={0.42}
+                        emissive="#0b1d45"
+                        emissiveIntensity={0.28}
+                        side={THREE.DoubleSide}
+                        transparent={derivedProject.connection.type === 'set_in'}
+                        opacity={derivedProject.connection.type === 'set_in' ? 0.96 : 1}
+                    />
+                </mesh>
+            </group>
         );
-    }, [derivedProject.connection.type, geometry, isValid]);
+    }, [derivedProject.connection.type, geometry, isValid, transform]);
 
     return meshComponent;
 };

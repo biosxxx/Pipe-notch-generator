@@ -2,32 +2,53 @@ import React from 'react';
 import * as THREE from 'three';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, GizmoHelper, GizmoViewport } from '@react-three/drei';
+import { findPrimitiveById } from '../../domain/geometry/solids';
+import { useDerivedProject } from '../../hooks/useDerivedProject';
 import { MainPipe } from './MainPipe';
 import { BranchPipe } from './BranchPipe';
 import { SeamLine } from './SeamLine';
 import { CameraController } from './CameraController';
-import { useDerivedProject } from '../../hooks/useDerivedProject';
+import { estimateSolidModelBounds, samplePointOnFrame } from './solidPreview';
 
 const DynamicGrid: React.FC = () => {
-    const { main } = useDerivedProject();
-    const d1 = main.od;
+    const { solids, main } = useDerivedProject();
+    const bounds = React.useMemo(() => estimateSolidModelBounds(solids), [solids]);
+    const gridSize = Math.max(main.od * 10, bounds.size * 2.4);
 
-    return <gridHelper args={[d1 * 10, 50, 0x4a5464, 0x1d222b]} key={d1} />;
+    return <gridHelper args={[gridSize, 56, 0x4a5464, 0x1d222b]} key={gridSize} />;
 };
 
 export const Scene: React.FC = () => {
     const derivedProject = useDerivedProject();
-    const sceneScale = Math.max(derivedProject.main.od, derivedProject.branch.od);
-    const angleRad = derivedProject.connection.axisAngleRad;
+    const bounds = React.useMemo(() => estimateSolidModelBounds(derivedProject.solids), [derivedProject.solids]);
+    const sceneScale = Math.max(bounds.size, derivedProject.main.od, derivedProject.branch.od);
+    const mainPrimitive = findPrimitiveById(derivedProject.solids, derivedProject.solids.outputs.mainPrimitiveId);
+    const branchPrimitive = findPrimitiveById(derivedProject.solids, derivedProject.solids.outputs.branchPrimitiveId);
     const keyLightPosition: [number, number, number] = [sceneScale * 2.2, sceneScale * 2.8, sceneScale * 2.1];
     const fillLightPosition: [number, number, number] = [-sceneScale * 2.8, sceneScale * 1.1, sceneScale * 1.8];
     const rimLightPosition: [number, number, number] = [sceneScale * 0.8, sceneScale * 1.9, -sceneScale * 3.4];
-    const branchDirX = Math.sin(angleRad);
-    const branchDirY = Math.cos(angleRad);
-    const mainInnerTopLight: [number, number, number] = [0, sceneScale * 0.92, 0];
-    const mainInnerBottomLight: [number, number, number] = [0, -sceneScale * 0.92, 0];
-    const branchInnerNearLight: [number, number, number] = [branchDirX * sceneScale * 0.55, branchDirY * sceneScale * 0.55, 0];
-    const branchInnerFarLight: [number, number, number] = [branchDirX * sceneScale * 1.5, branchDirY * sceneScale * 1.5, 0];
+    const mainInnerTopLight: [number, number, number] = mainPrimitive && mainPrimitive.kind === 'hollow-cylinder'
+        ? samplePointOnFrame(mainPrimitive.frame, mainPrimitive.axialRange.end * 0.38)
+        : [0, sceneScale * 0.92, 0];
+    const mainInnerBottomLight: [number, number, number] = mainPrimitive && mainPrimitive.kind === 'hollow-cylinder'
+        ? samplePointOnFrame(mainPrimitive.frame, mainPrimitive.axialRange.start * 0.38)
+        : [0, -sceneScale * 0.92, 0];
+    const branchNearAxial = branchPrimitive && branchPrimitive.kind === 'hollow-cylinder'
+        ? THREE.MathUtils.lerp(branchPrimitive.axialRange.start, branchPrimitive.axialRange.end, 0.28)
+        : sceneScale * 0.55;
+    const branchFarAxial = branchPrimitive && branchPrimitive.kind === 'hollow-cylinder'
+        ? THREE.MathUtils.lerp(branchPrimitive.axialRange.start, branchPrimitive.axialRange.end, 0.7)
+        : sceneScale * 1.5;
+    const branchInnerNearLight: [number, number, number] = branchPrimitive && branchPrimitive.kind === 'hollow-cylinder'
+        ? samplePointOnFrame(branchPrimitive.frame, branchNearAxial)
+        : [sceneScale * 0.55, sceneScale * 0.55, 0];
+    const branchInnerFarLight: [number, number, number] = branchPrimitive && branchPrimitive.kind === 'hollow-cylinder'
+        ? samplePointOnFrame(branchPrimitive.frame, branchFarAxial)
+        : [sceneScale * 1.5, sceneScale * 1.5, 0];
+    const intersectionLight: [number, number, number] = branchPrimitive && branchPrimitive.kind === 'hollow-cylinder'
+        ? samplePointOnFrame(branchPrimitive.frame, branchPrimitive.axialRange.start + derivedProject.branch.od * 0.35)
+        : [0, 0, 0];
+    const axesSize = Math.max(sceneScale * 0.8, 100);
 
     return (
         <div className="h-full w-full bg-[#090b10]">
@@ -82,21 +103,21 @@ export const Scene: React.FC = () => {
                 />
                 <pointLight
                     position={branchInnerNearLight}
-                    intensity={2.3}
+                    intensity={2.7}
                     distance={sceneScale * 6}
                     decay={1.4}
                     color="#dce7ff"
                 />
                 <pointLight
                     position={branchInnerFarLight}
-                    intensity={1.9}
+                    intensity={2.25}
                     distance={sceneScale * 7}
                     decay={1.6}
                     color="#8fb6ff"
                 />
                 <pointLight
-                    position={[0, 0, 0]}
-                    intensity={1.35}
+                    position={intersectionLight}
+                    intensity={1.75}
                     distance={sceneScale * 5}
                     decay={1.2}
                     color="#fff4dc"
@@ -110,7 +131,7 @@ export const Scene: React.FC = () => {
 
                 <DynamicGrid />
 
-                <axesHelper args={[100]} />
+                <axesHelper args={[axesSize]} />
 
                 <GizmoHelper alignment="bottom-right" margin={[80, 80]}>
                     <GizmoViewport axisColors={['#9d4b4b', '#2f7f4f', '#3b5b9d']} labelColor="white" />

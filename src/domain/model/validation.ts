@@ -5,6 +5,9 @@ import type {
     ValidationMessage,
     ValidationSummary,
 } from './types';
+import type { SolidModel } from '../geometry/solids';
+import { validateMainHoleTemplate } from '../geometry/mainHoleTemplate';
+import { validateReceiverTrim } from '../geometry/receiverTrimPreview';
 
 interface ValidationContext {
     project: ProjectInput;
@@ -12,6 +15,7 @@ interface ValidationContext {
     branch: DerivedPipeSpec;
     connection: DerivedConnection;
     maxOffset: number;
+    solids: SolidModel;
 }
 
 function createMessage(
@@ -23,7 +27,7 @@ function createMessage(
 }
 
 export function validateProject(context: ValidationContext): ValidationSummary {
-    const { project, main, branch, connection, maxOffset } = context;
+    const { project, main, branch, connection, maxOffset, solids } = context;
     const errors: ValidationMessage[] = [];
     const warnings: ValidationMessage[] = [];
 
@@ -91,6 +95,18 @@ export function validateProject(context: ValidationContext): ValidationSummary {
     }
     if (maxOffset - Math.abs(connection.offset) < 2) {
         warnings.push(createMessage('warning', 'offset-limit', 'Offset is close to the geometric limit.'));
+    }
+
+    if (errors.length === 0) {
+        const branchTrimError = validateReceiverTrim(solids, 128);
+        if (branchTrimError) {
+            errors.push(createMessage('error', 'solid-branch-trim', branchTrimError));
+        }
+
+        const mainHoleError = validateMainHoleTemplate(solids, 360);
+        if (mainHoleError) {
+            errors.push(createMessage('error', 'solid-main-hole', mainHoleError));
+        }
     }
 
     return {

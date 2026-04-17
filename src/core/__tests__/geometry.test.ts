@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { calculateNotchGeometry, calculateUnrolledPoints } from '../geometry-engine';
+import { calculateNotchGeometry, calculateUnrolledPoints } from './legacy-geometry-engine';
 import { generateDXF } from '../dxf-service';
 import type { PipeParameters } from '../../types';
 

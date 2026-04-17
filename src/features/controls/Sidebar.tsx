@@ -6,10 +6,9 @@ import { DebouncedInput } from '../../components/ui/DebouncedInput';
 import { ReadonlyField } from '../../components/ui/ReadonlyField';
 import { Section } from '../../components/ui/Section';
 import { SegmentedControl } from '../../components/ui/SegmentedControl';
-import { calculateNotchGeometry } from '../../core/geometry-engine';
 import { useDerivedProject } from '../../hooks/useDerivedProject';
 import { useDownloadAction } from '../../hooks/useDownloadAction';
-import type { ConnectionType, PenetrationMode, ValidationMessage } from '../../domain/model/types';
+import type { ConnectionType, PenetrationMode } from '../../domain/model/types';
 import { useProjectStore } from '../../store/useProjectStore';
 
 declare const __APP_VERSION__: string;
@@ -81,27 +80,7 @@ export const Sidebar: React.FC = () => {
 
     const derivedProject = useDerivedProject();
     const handleDownload = useDownloadAction();
-    const geometryResult = React.useMemo(
-        () => calculateNotchGeometry(derivedProject.geometry, 128),
-        [derivedProject.geometry],
-    );
-
-    const geometryErrors = React.useMemo<ValidationMessage[]>(() => {
-        if (geometryResult.isValid || !geometryResult.error) {
-            return [];
-        }
-
-        return [{
-            severity: 'error',
-            code: 'geometry-runtime',
-            message: geometryResult.error,
-        }];
-    }, [geometryResult.error, geometryResult.isValid]);
-
-    const errors = React.useMemo(
-        () => [...derivedProject.validation.errors, ...geometryErrors],
-        [derivedProject.validation.errors, geometryErrors],
-    );
+    const errors = derivedProject.validation.errors;
 
     const warnings = derivedProject.validation.warnings;
     const exportDisabled = errors.length > 0;
@@ -336,7 +315,7 @@ export const Sidebar: React.FC = () => {
                         />
                     </div>
                     <p className="mt-3 text-[11px] leading-4 text-gray-500">
-                        STEP export stays disabled until the solid-model layer is implemented.
+                        STEP export stays disabled until the STEP serializer and CAD boolean backend are implemented.
                     </p>
                 </Section>
             </div>

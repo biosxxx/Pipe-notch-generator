@@ -1,4 +1,5 @@
 import type { PipeParameters } from '../../types';
+import type { SolidModel } from '../geometry/solids';
 
 export type ConnectionType = 'set_on' | 'set_in';
 export type PenetrationMode = 'by_rule' | 'by_value';
@@ -61,6 +62,7 @@ export interface DerivedProject {
     branch: DerivedPipeSpec;
     connection: DerivedConnection;
     geometry: PipeParameters;
+    solids: SolidModel;
     limits: {
         maxOffset: number;
     };

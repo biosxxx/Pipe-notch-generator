@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
-import { calculateUnrolledPoints } from '../core/geometry-engine';
 import { createDxfString, DxfWriter } from '../core/dxf-writer';
+import { getExportPoints } from '../core/export-points';
 import { generatePdf } from '../core/pdf-generator';
 import { useDerivedProject } from './useDerivedProject';
 
@@ -15,11 +15,11 @@ export function useDownloadAction() {
         }
 
         if (format === 'pdf') {
-            generatePdf(params, type);
+            generatePdf(params, type, derivedProject);
             return;
         }
 
-        const points = calculateUnrolledPoints(params, type);
+        const points = getExportPoints(type, params, derivedProject);
 
         if (points.length === 0) {
             alert("Could not generate valid geometry for export.");

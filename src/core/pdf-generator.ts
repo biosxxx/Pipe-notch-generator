@@ -1,6 +1,7 @@
 import { jsPDF } from 'jspdf';
 import type { PipeParameters } from '../types';
-import { calculateUnrolledPoints } from './geometry-engine';
+import type { DerivedProject } from '../domain/model/types';
+import { getExportPoints } from './export-points';
 
 function formatValue(value: number, digits = 1) {
     if (!Number.isFinite(value)) return '0';
@@ -8,8 +9,8 @@ function formatValue(value: number, digits = 1) {
     return fixed.replace(/\.0+$/, '');
 }
 
-export function generatePdf(params: PipeParameters, type: 'pipe' | 'hole'): void {
-    const points = calculateUnrolledPoints(params, type);
+export function generatePdf(params: PipeParameters, type: 'pipe' | 'hole', derivedProject?: DerivedProject): void {
+    const points = getExportPoints(type, params, derivedProject);
 
     if (points.length === 0) {
         alert('No geometry to export.');

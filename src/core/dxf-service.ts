@@ -1,12 +1,13 @@
 import type { PipeParameters } from '../types';
-import { calculateUnrolledPoints } from './geometry-engine';
+import type { DerivedProject } from '../domain/model/types';
 import { DxfWriter } from './dxf-writer';
+import { getExportPoints } from './export-points';
 
 /**
  * Generates a DXF string from the normalized pattern points used by the app.
  */
-export function generateDXF(type: 'pipe' | 'hole', params: PipeParameters): string {
-    const points = calculateUnrolledPoints(params, type);
+export function generateDXF(type: 'pipe' | 'hole', params: PipeParameters, derivedProject?: DerivedProject): string {
+    const points = getExportPoints(type, params, derivedProject);
 
     if (points.length === 0) {
         return '';
