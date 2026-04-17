@@ -1,33 +1,16 @@
-import React, { useMemo, useEffect } from 'react';
+import React, { useMemo } from 'react';
 import * as THREE from 'three';
-import { useShallow } from 'zustand/react/shallow';
-import { useParamStore } from '../../store/useParamStore';
 import { calculateNotchGeometry } from '../../core/geometry-engine';
+import { useDerivedProject } from '../../hooks/useDerivedProject';
 
 export const BranchPipe: React.FC = () => {
-    // Select only geometry parameters to avoid re-renders on unrelated state changes (like errorMessage)
-    // This breaks the infinite update loop
-    const params = useParamStore(useShallow(state => ({
-        d1: state.d1,
-        d2: state.d2,
-        thickness: state.thickness,
-        angle: state.angle,
-        offset: state.offset,
-        weldingGap: state.weldingGap,
-        startAngle: state.startAngle,
-        paddingD1: state.paddingD1,
-        paddingD2: state.paddingD2,
-        calcByID: state.calcByID
-    })));
+    const derivedProject = useDerivedProject();
 
-    // Select the error setter action separately (stable reference)
-    const setErrorMessage = useParamStore(state => state.setErrorMessage);
-
-    const { geometry, isValid, error } = useMemo(() => {
-        const result = calculateNotchGeometry(params, 128); // 128 segments
+    const { geometry, isValid } = useMemo(() => {
+        const result = calculateNotchGeometry(derivedProject.geometry, 128);
 
         if (!result.isValid) {
-            return { geometry: null, isValid: false, error: result.error };
+            return { geometry: null, isValid: false };
         }
 
         const geo = new THREE.BufferGeometry();
@@ -45,17 +28,8 @@ export const BranchPipe: React.FC = () => {
         geo.setIndex(result.indices);
         geo.computeVertexNormals();
 
-        return { geometry: geo, isValid: true, error: null };
-    }, [params]);
-
-    // Effect to Update Error State
-    useEffect(() => {
-        const newError = isValid ? null : (error || "Unknown Error");
-        // Check current store value to prevent loop
-        if (useParamStore.getState().errorMessage !== newError) {
-            setErrorMessage(newError);
-        }
-    }, [isValid, error, setErrorMessage]);
+        return { geometry: geo, isValid: true };
+    }, [derivedProject.geometry]);
 
     // Conditional rendering of mesh
     const meshComponent = useMemo(() => {
@@ -63,14 +37,18 @@ export const BranchPipe: React.FC = () => {
         return (
             <mesh geometry={geometry}>
                 <meshStandardMaterial
-                    color="#3c83f6"
-                    roughness={0.4}
-                    metalness={0.3}
+                    color="#2f7eff"
+                    roughness={0.24}
+                    metalness={0.42}
+                    emissive="#0b1d45"
+                    emissiveIntensity={0.28}
                     side={THREE.DoubleSide}
+                    transparent={derivedProject.connection.type === 'set_in'}
+                    opacity={derivedProject.connection.type === 'set_in' ? 0.96 : 1}
                 />
             </mesh>
         );
-    }, [geometry, isValid]);
+    }, [derivedProject.connection.type, geometry, isValid]);
 
     return meshComponent;
 };

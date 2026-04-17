@@ -1,27 +1,19 @@
 import { useCallback } from 'react';
-import { useParamStore } from '../store/useParamStore';
-import { useShallow } from 'zustand/react/shallow';
 import { calculateUnrolledPoints } from '../core/geometry-engine';
 import { createDxfString, DxfWriter } from '../core/dxf-writer';
 import { generatePdf } from '../core/pdf-generator';
+import { useDerivedProject } from './useDerivedProject';
 
 export function useDownloadAction() {
-    const params = useParamStore(
-        useShallow((state) => ({
-            d1: state.d1,
-            d2: state.d2,
-            thickness: state.thickness,
-            angle: state.angle,
-            offset: state.offset,
-            weldingGap: state.weldingGap,
-            startAngle: state.startAngle,
-            paddingD1: state.paddingD1,
-            paddingD2: state.paddingD2,
-            calcByID: state.calcByID,
-        }))
-    );
+    const derivedProject = useDerivedProject();
+    const params = derivedProject.geometry;
 
     const download = useCallback((type: 'pipe' | 'hole', format: 'dxf' | 'pdf' = 'dxf') => {
+        if (!derivedProject.validation.isValid) {
+            alert(derivedProject.validation.errors[0]?.message || 'Project parameters are invalid.');
+            return;
+        }
+
         if (format === 'pdf') {
             generatePdf(params, type);
             return;
@@ -89,16 +81,16 @@ export function useDownloadAction() {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
 
-        const filename = `notch_D${params.d2}_on_D${params.d1}_${params.angle}deg_${type}.dxf`;
+        const normalizedFilename = `notch_${derivedProject.connection.type}_${params.d2}x${params.thickness}_on_${params.d1}x${params.mainThickness}_${params.angle}deg_${type}.dxf`;
 
         a.href = url;
-        a.download = filename;
+        a.download = normalizedFilename;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
 
-    }, [params]);
+    }, [derivedProject, params]);
 
     return download;
 }

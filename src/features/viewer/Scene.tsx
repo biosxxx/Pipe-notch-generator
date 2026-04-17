@@ -1,52 +1,107 @@
-import React, { useEffect, useRef } from 'react';
-import { Canvas, useThree } from '@react-three/fiber';
-import { OrbitControls, Grid, GizmoHelper, GizmoViewport } from '@react-three/drei';
+import React from 'react';
+import * as THREE from 'three';
+import { Canvas } from '@react-three/fiber';
+import { OrbitControls, GizmoHelper, GizmoViewport } from '@react-three/drei';
 import { MainPipe } from './MainPipe';
 import { BranchPipe } from './BranchPipe';
 import { SeamLine } from './SeamLine';
-import { useParamStore } from '../../store/useParamStore';
-
 import { CameraController } from './CameraController';
+import { useDerivedProject } from '../../hooks/useDerivedProject';
 
 const DynamicGrid: React.FC = () => {
-    // Dynamic Grid Size
-    // Need to access store but standard gridHelper args are not reactive by default in JSX unless key changes or new instance
-    // We can use a simple subscriber or just pass large enough default.
-    // Spec says: args={[d1 * 10, 50]}
+    const { main } = useDerivedProject();
+    const d1 = main.od;
 
-    // We need to subscribe inside here
-    const d1 = useParamStore(state => state.d1);
-
-    // Use key to force remount if size changes heavily? Or just update args?
-    // args update usually requires key change for helpers.
-
-    return <gridHelper args={[d1 * 10, 50, 0x333333, 0x1a1a1a]} key={d1} />;
+    return <gridHelper args={[d1 * 10, 50, 0x4a5464, 0x1d222b]} key={d1} />;
 };
 
 export const Scene: React.FC = () => {
+    const derivedProject = useDerivedProject();
+    const sceneScale = Math.max(derivedProject.main.od, derivedProject.branch.od);
+    const angleRad = derivedProject.connection.axisAngleRad;
+    const keyLightPosition: [number, number, number] = [sceneScale * 2.2, sceneScale * 2.8, sceneScale * 2.1];
+    const fillLightPosition: [number, number, number] = [-sceneScale * 2.8, sceneScale * 1.1, sceneScale * 1.8];
+    const rimLightPosition: [number, number, number] = [sceneScale * 0.8, sceneScale * 1.9, -sceneScale * 3.4];
+    const branchDirX = Math.sin(angleRad);
+    const branchDirY = Math.cos(angleRad);
+    const mainInnerTopLight: [number, number, number] = [0, sceneScale * 0.92, 0];
+    const mainInnerBottomLight: [number, number, number] = [0, -sceneScale * 0.92, 0];
+    const branchInnerNearLight: [number, number, number] = [branchDirX * sceneScale * 0.55, branchDirY * sceneScale * 0.55, 0];
+    const branchInnerFarLight: [number, number, number] = [branchDirX * sceneScale * 1.5, branchDirY * sceneScale * 1.5, 0];
+
     return (
-        <div className="h-full w-full bg-[#0f0f0f]">
+        <div className="h-full w-full bg-[#090b10]">
             <Canvas
-                // Increase Far Plane prevents clipping large pipes
+                gl={{ antialias: true }}
                 camera={{ position: [150, 100, 150], fov: 45, far: 100000 }}
-                shadows
+                onCreated={({ gl }) => {
+                    gl.toneMapping = THREE.ACESFilmicToneMapping;
+                    gl.toneMappingExposure = 1.14;
+                }}
+                shadows={{ type: THREE.PCFSoftShadowMap }}
                 style={{ width: '100%', height: '100%' }}
             >
-                <color attach="background" args={['#0f0f0f']} />
+                <color attach="background" args={['#090b10']} />
+                <fog attach="fog" args={['#090b10', sceneScale * 5, sceneScale * 16]} />
 
-                {/* Lighting attached to camera? Or just fixed far away? 
-                    Prompt said "Switch DirectionalLight to follow the camera or ensure the position scales".
-                    Simpler: ensure position scales. 
-                    Actually, if we just put lights very far away and increase intensity, it works.
-                    But point lights fall off. Directional lights do not.
-                    However shadows need shadow camera bounds.
-                    For now, let's stick to standard lights but boost position.
-                */}
-                <ambientLight intensity={0.5} />
-                <directionalLight position={[5000, 10000, 5000]} intensity={1.5} castShadow />
-                <directionalLight position={[-5000, 0, -5000]} intensity={0.5} color="#445566" />
+                <hemisphereLight args={['#e4efff', '#050608', 0.52]} />
+                <ambientLight intensity={0.34} color="#d8e4ff" />
 
-                {/* Objects */}
+                <spotLight
+                    position={keyLightPosition}
+                    angle={0.42}
+                    penumbra={0.7}
+                    intensity={3.4}
+                    distance={sceneScale * 18}
+                    color="#fff0d2"
+                />
+                <directionalLight
+                    position={fillLightPosition}
+                    intensity={1.45}
+                    color="#9cbcff"
+                />
+                <directionalLight
+                    position={rimLightPosition}
+                    intensity={1.95}
+                    color="#f4f8ff"
+                />
+
+                <pointLight
+                    position={mainInnerTopLight}
+                    intensity={2.6}
+                    distance={sceneScale * 7}
+                    decay={1.5}
+                    color="#bcd2ff"
+                />
+                <pointLight
+                    position={mainInnerBottomLight}
+                    intensity={2.2}
+                    distance={sceneScale * 7}
+                    decay={1.6}
+                    color="#a9c0ff"
+                />
+                <pointLight
+                    position={branchInnerNearLight}
+                    intensity={2.3}
+                    distance={sceneScale * 6}
+                    decay={1.4}
+                    color="#dce7ff"
+                />
+                <pointLight
+                    position={branchInnerFarLight}
+                    intensity={1.9}
+                    distance={sceneScale * 7}
+                    decay={1.6}
+                    color="#8fb6ff"
+                />
+                <pointLight
+                    position={[0, 0, 0]}
+                    intensity={1.35}
+                    distance={sceneScale * 5}
+                    decay={1.2}
+                    color="#fff4dc"
+                />
+
                 <group position={[0, 0, 0]}>
                     <MainPipe />
                     <BranchPipe />
@@ -65,8 +120,20 @@ export const Scene: React.FC = () => {
                 <CameraController />
             </Canvas>
 
-            {/* Overlay Instructions */}
-            <div className="absolute bottom-4 right-4 pointer-events-none text-xs text-gray-500 bg-black/50 p-2 rounded">
+            <div className="pointer-events-none absolute left-4 top-4 rounded-xl bg-black/45 px-3 py-2 text-[11px] text-gray-200 backdrop-blur-sm">
+                <div className="font-semibold text-white">{derivedProject.summary.connectionLabel}</div>
+                <div className="mt-1 text-gray-300">
+                    Main {Math.round(derivedProject.main.od)} / {Math.round(derivedProject.main.id)}
+                    {' '}| Branch {Math.round(derivedProject.branch.od)} / {Math.round(derivedProject.branch.id)}
+                </div>
+                {derivedProject.connection.type === 'set_in' && (
+                    <div className="mt-1 text-gray-400">
+                        Penetration {Math.round(derivedProject.connection.resolvedPenetrationDepth * 10) / 10} mm
+                    </div>
+                )}
+            </div>
+
+            <div className="absolute bottom-4 right-4 pointer-events-none rounded bg-black/50 p-2 text-xs text-gray-400">
                 LMB: Rotate | RMB: Pan | Scroll: Zoom
             </div>
         </div>

@@ -1,26 +1,13 @@
 import React, { useMemo } from 'react';
 import * as THREE from 'three';
-import { useShallow } from 'zustand/react/shallow';
-import { useParamStore } from '../../store/useParamStore';
 import { calculateNotchGeometry } from '../../core/geometry-engine';
+import { useDerivedProject } from '../../hooks/useDerivedProject';
 
 export const SeamLine: React.FC = () => {
-    // Select only geometry parameters using useShallow
-    const params = useParamStore(useShallow(state => ({
-        d1: state.d1,
-        d2: state.d2,
-        thickness: state.thickness,
-        angle: state.angle,
-        offset: state.offset,
-        weldingGap: state.weldingGap,
-        startAngle: state.startAngle,
-        paddingD1: state.paddingD1,
-        paddingD2: state.paddingD2,
-        calcByID: state.calcByID
-    })));
+    const derivedProject = useDerivedProject();
 
     const { points, isValid } = useMemo(() => {
-        const result = calculateNotchGeometry(params, 128);
+        const result = calculateNotchGeometry(derivedProject.geometry, 128);
         if (!result.isValid) return { points: null, isValid: false };
 
         const segmentCount = 128;
@@ -33,15 +20,16 @@ export const SeamLine: React.FC = () => {
         }
 
         return { points: seamPoints, isValid: true };
-    }, [params]);
-
-    if (!isValid || !points) return null;
+    }, [derivedProject.geometry]);
 
     const lineObj = useMemo(() => {
+        if (!isValid || !points) return null;
         const geo = new THREE.BufferGeometry().setFromPoints(points);
         const mat = new THREE.LineBasicMaterial({ color: "#ff3333", linewidth: 3 });
         return new THREE.Line(geo, mat);
-    }, [points]);
+    }, [isValid, points]);
+
+    if (!lineObj) return null;
 
     return <primitive object={lineObj} />;
 };

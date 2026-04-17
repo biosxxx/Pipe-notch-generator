@@ -10,6 +10,34 @@ interface GeometryResult {
     contour2D?: Point2D[]; // Unrolled template points
 }
 
+function getMainOuterRadius(params: PipeParameters) {
+    return params.d1 / 2;
+}
+
+function getMainInnerRadius(params: PipeParameters) {
+    return params.d1Inner / 2;
+}
+
+function getBranchOuterRadius(params: PipeParameters) {
+    return params.d2 / 2;
+}
+
+function getBranchInnerRadius(params: PipeParameters) {
+    return params.d2Inner / 2;
+}
+
+function getBranchCalcRadius(params: PipeParameters) {
+    return params.calcByID ? getBranchOuterRadius(params) : getBranchInnerRadius(params);
+}
+
+function getReceiverContactRadius(params: PipeParameters) {
+    return params.connectionType === 'set_in' ? getMainInnerRadius(params) : getMainOuterRadius(params);
+}
+
+function getAxialPlacementShift(params: PipeParameters) {
+    return params.connectionType === 'set_in' ? params.penetrationDepth : 0;
+}
+
 /**
  * Calculates the 3D geometry and unrolled 2D contour for the notched pipe.
  *
@@ -20,30 +48,21 @@ interface GeometryResult {
 export function calculateNotchGeometry(
     params: PipeParameters,
     segments: number = 128,
-    // calculation mode is now inside params.calcByID, checking usage below
 ): GeometryResult {
-    const { d1, d2, thickness, angle, offset, weldingGap, startAngle, calcByID } = params;
+    const { d1, d2, angle, offset, weldingGap } = params;
 
     // Safety Guard: Check for NaN or invalid checks BEFORE processing
     if (!d1 || !d2 || d1 <= 0 || d2 <= 0 || isNaN(d1) || isNaN(d2)) {
         return { vertices: [], indices: [], uvs: [], isValid: false, error: "Invalid Diameters." };
     }
 
-    const R1 = d1 / 2;
-    const R2_outer = d2 / 2;
-    const R2_inner = R2_outer - thickness;
-
-    // Logic Inversion from original: 
-    // Checked (true) = Deep Cut = use R2_outer logic for intersection check.
-    // This seems counter-intuitive based on variable naming in original code, but 
-    // "calcByID ? R2_outer : R2_inner" was the original logic.
-    // We keep the behavior: if calcByID is true, we cut "sharper" (to the OD).
-    const R2_calc = calcByID ? R2_outer : R2_inner;
-    const R2_mesh = R2_outer; // We always render the OD mesh
+    const R1 = getReceiverContactRadius(params);
+    const R2_outer = getBranchOuterRadius(params);
+    const R2_calc = getBranchCalcRadius(params);
+    const R2_mesh = R2_outer;
+    const axialShift = getAxialPlacementShift(params);
 
     const angleRad = degToRad(angle);
-    const startAngleRad = degToRad(startAngle); // NOTE: startAngle only affects 2D template usually, but we might want to rotate mesh texture/seam.
-
     const sinTheta = Math.sin(angleRad);
     const cosTheta = Math.cos(angleRad);
     const tanTheta = Math.tan(angleRad);
@@ -90,7 +109,7 @@ export function calculateNotchGeometry(
                 // Formula: z = (1/sin(theta)) * sqrt(R1^2 - (R2*sin(alpha) + off)^2) + (R2*cos(alpha) / tan(theta))
                 const part1 = (1 / sT) * Math.sqrt(term);
                 const part2 = (R2_mesh * cosAlpha) / tT;
-                const cutDepth = part1 + part2 - weldingGap;
+                const cutDepth = part1 + part2 - weldingGap - axialShift;
                 len = cutDepth;
 
                 // Save 2D Unrolled Point
@@ -100,7 +119,7 @@ export function calculateNotchGeometry(
 
             } else {
                 // Flat End
-                len = d1 + pipe2Length;
+                len = d1 + pipe2Length - axialShift;
             }
 
             // 3D Transformation (To align pipe2 with main pipe at angle)
@@ -200,15 +219,13 @@ export function calculateUnrolledPoints(params: PipeParameters, type: 'pipe' | '
 }
 
 function calculatePipe2D(params: PipeParameters, steps: number): Point2D[] {
-    const { d1, d2, thickness, angle, offset, weldingGap, startAngle, paddingD2, calcByID } = params;
+    const { angle, offset, weldingGap, startAngle, paddingD2 } = params;
 
-    const R1 = d1 / 2;
-    const R2_outer = d2 / 2;
-    const R2_inner = R2_outer - thickness;
-
-    // "Deep Cut" logic: check if user wants to use OD or ID for intersection check
-    const R2_calc = calcByID ? R2_outer : R2_inner;
+    const R1 = getReceiverContactRadius(params);
+    const R2_outer = getBranchOuterRadius(params);
+    const R2_calc = getBranchCalcRadius(params);
     const R2_draw = R2_outer;
+    const axialShift = getAxialPlacementShift(params);
 
     const angleRad = degToRad(angle);
     const startAngleRad = degToRad(startAngle);
@@ -236,7 +253,7 @@ function calculatePipe2D(params: PipeParameters, steps: number): Point2D[] {
         }
 
         // Cut Length Formula (Raw depth)
-        const lengthToTouch = ((1 / sT) * Math.sqrt(term) + (R2_draw * Math.cos(effAngle) / tT)) - weldingGap;
+        const lengthToTouch = ((1 / sT) * Math.sqrt(term) + (R2_draw * Math.cos(effAngle) / tT)) - weldingGap - axialShift;
 
         // Push raw Y (we will normalize later)
         points.push({ x, y: lengthToTouch });
@@ -260,15 +277,11 @@ function calculatePipe2D(params: PipeParameters, steps: number): Point2D[] {
 }
 
 function calculateHole2D(params: PipeParameters, steps: number): Point2D[] {
-    const { d1, d2, thickness, angle, offset, paddingD1 } = params;
+    const { angle, offset, paddingD1 } = params;
 
-    const R1 = d1 / 2;
-    const R2_outer = d2 / 2;
-    const R2_inner = R2_outer - thickness;
-
-    // Hole is usually cut to match the ID of the branching pipe to let fluid through?
-    // Legacy uses R2_inner for hole calculation.
-    const R2_hole = R2_inner;
+    const R1 = getMainOuterRadius(params);
+    const R2_hole = getBranchCalcRadius(params);
+    const axialShift = getAxialPlacementShift(params);
 
     const angleRad = degToRad(angle);
     const sinTheta = Math.sin(angleRad);
@@ -290,7 +303,7 @@ function calculateHole2D(params: PipeParameters, steps: number): Point2D[] {
         if (term < 0) continue;
 
         const sqrtVal = Math.sqrt(term);
-        const t = (sqrtVal + C1) / sT;
+        const t = ((sqrtVal + C1) / sT) - axialShift;
 
         // 3D Intersection Point on Cylinder 1 Surface
         const x3d = t * sinTheta - r2Cos * cosTheta;

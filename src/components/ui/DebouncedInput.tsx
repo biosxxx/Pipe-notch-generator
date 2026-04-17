@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 
 interface DebouncedInputProps {
     label: string;
@@ -7,6 +7,7 @@ interface DebouncedInputProps {
     min?: number;
     max?: number;
     helperText?: string;
+    className?: string;
 }
 
 export const DebouncedInput: React.FC<DebouncedInputProps> = ({
@@ -15,62 +16,51 @@ export const DebouncedInput: React.FC<DebouncedInputProps> = ({
     onChange,
     min,
     max,
-    helperText
+    helperText,
+    className
 }) => {
-    // Local state to hold the immediate input value (can be string to allow empty/typing)
-    const [inputValue, setInputValue] = useState<string>(value.toString());
+    const timerRef = useRef<number | null>(null);
 
-    // Sync local state if external value changes (e.g. preset loaded)
-    // We only sync if the parsed local value is different to avoid cursor jumps
     useEffect(() => {
-        const parsed = parseFloat(inputValue);
-        if (parsed !== value && !isNaN(parsed)) {
-            setInputValue(value.toString());
-        } else if (isNaN(parsed) && inputValue === '') {
-            // If currently empty, user is typing, don't force it? 
-            // Actually if store changes externally, we should force it.
-            // But usually store changes only via this input.
-            // Let's assume store is source of truth.
-            setInputValue(value.toString());
+        return () => {
+            if (timerRef.current !== null) {
+                window.clearTimeout(timerRef.current);
+            }
+        };
+    }, []);
+
+    const scheduleChange = (rawValue: string) => {
+        if (timerRef.current !== null) {
+            window.clearTimeout(timerRef.current);
         }
-    }, [value]);
 
-    useEffect(() => {
-        const timer = setTimeout(() => {
-            const parsed = parseFloat(inputValue);
+        timerRef.current = window.setTimeout(() => {
+            const parsed = parseFloat(rawValue);
 
-            // Validation Logic
-            if (isNaN(parsed)) return; // Don't push NaNs
-            if (parsed === value) return; // No change
-
-            // If min/max defined, we might clamp or just ignore?
-            // Usually standard <input> logic let's you type invalid, then validation happens.
-            // Requirement: "if input is empty string "" or "0", DO NOT update the global store".
-
-            if (min !== undefined && parsed < min) return; // Don't update if below min (e.g. 0)
+            if (rawValue === '' || Number.isNaN(parsed)) return;
+            if (parsed === value) return;
+            if (min !== undefined && parsed < min) return;
             if (max !== undefined && parsed > max) return;
 
-            // Push to parent
             onChange(parsed);
         }, 500);
-
-        return () => clearTimeout(timer);
-    }, [inputValue, onChange, min, max, value]);
+    };
 
     return (
-        <div className="flex flex-col gap-1">
-            <label className="text-[10px] md:text-xs font-semibold uppercase tracking-wide text-gray-400">
+        <div className={`flex flex-col gap-1.5 ${className || ''}`}>
+            <label className="text-[11px] font-medium tracking-[0.08em] text-gray-300">
                 {label}
             </label>
             <input
+                key={value}
+                defaultValue={value.toString()}
                 type="number"
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
+                onChange={(e) => scheduleChange(e.target.value)}
                 step="any"
-                className="w-full rounded bg-black/20 px-3 py-1.5 md:py-2 text-xs md:text-sm text-[var(--color-primary)] placeholder-white/20 outline-none ring-1 ring-white/10 transition-all focus:bg-black/40 focus:ring-[var(--color-primary)] active:scale-[0.99]"
+                className="w-full rounded-lg bg-[#141821] px-3.5 py-2.5 text-sm font-medium tabular-nums text-slate-100 outline-none ring-1 ring-white/8 transition-all focus:bg-[#171d28] focus:ring-[var(--color-primary)] active:scale-[0.995]"
             />
             {helperText && (
-                <p className="text-[9px] md:text-[10px] text-gray-500">{helperText}</p>
+                <p className="text-[11px] leading-4 text-gray-500">{helperText}</p>
             )}
         </div>
     );
