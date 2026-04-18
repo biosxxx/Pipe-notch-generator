@@ -43,6 +43,6 @@ jobs:
           source-directory: 'dist'
           destination-github-username: 'Biosxxx'
           destination-repository-name: 'cadautoscript.com'
-          target-directory: 'static/utilities/pipe-cutter'
+          target-directory: 'static/utility-apps/pipe-cutter'
           user-email: 'bot@pvt-game.com'
           target-branch: 'main'
