@@ -1,6 +1,6 @@
 import React from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { AlertCircle, AlertTriangle, Download, FileText } from 'lucide-react';
+import { AlertCircle, AlertTriangle, Box, Download, FileText, LoaderCircle } from 'lucide-react';
 import { Checkbox } from '../../components/ui/Checkbox';
 import { DebouncedInput } from '../../components/ui/DebouncedInput';
 import { ReadonlyField } from '../../components/ui/ReadonlyField';
@@ -35,12 +35,14 @@ function ExportButton({
     icon,
     onClick,
     disabled,
+    busy = false,
 }: {
     label: string;
     accent: 'blue' | 'red' | 'neutral';
     icon: React.ReactNode;
     onClick: () => void;
     disabled: boolean;
+    busy?: boolean;
 }) {
     const accentClass = accent === 'blue'
         ? 'border-blue-500/30 bg-blue-500/10 text-blue-100 hover:bg-blue-500/20'
@@ -59,6 +61,7 @@ function ExportButton({
                 {icon}
                 {label}
             </span>
+            {busy && <LoaderCircle className="h-4 w-4 animate-spin" />}
         </button>
     );
 }
@@ -79,15 +82,35 @@ export const Sidebar: React.FC = () => {
     })));
 
     const derivedProject = useDerivedProject();
-    const handleDownload = useDownloadAction();
+    const {
+        download,
+        stepCapability,
+        stepReadiness,
+        stepState,
+    } = useDownloadAction();
     const errors = derivedProject.validation.errors;
 
     const warnings = derivedProject.validation.warnings;
     const exportDisabled = errors.length > 0;
+    const stepDisabled = !stepReadiness.isReady || !stepCapability.enabled || stepState.isExporting;
+    const stepRuntimeCopy = !stepCapability.enabled
+        ? stepCapability.reason
+        : stepCapability.localEnabled
+            ? 'Exact assembly STEP export runs locally in a background worker via OpenCascade WASM.'
+            : 'Browser STEP export is unavailable here, using the configured backend fallback.';
+    const stepFallbackCopy = stepCapability.localEnabled && stepCapability.endpoint
+        ? 'If the browser exporter fails, the app falls back to the configured backend automatically.'
+        : stepCapability.localEnabled
+            ? 'No server round-trip is required for STEP export.'
+            : null;
 
     const triggerExport = (type: 'pipe' | 'hole', format: 'dxf' | 'pdf') => {
         if (exportDisabled) return;
-        handleDownload(type, format);
+        void download(type, format);
+    };
+
+    const triggerStepExport = () => {
+        void download('assembly', 'step');
     };
 
     const versionLabel = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.0';
@@ -313,10 +336,53 @@ export const Sidebar: React.FC = () => {
                             onClick={() => triggerExport('hole', 'pdf')}
                             disabled={exportDisabled}
                         />
+                        <ExportButton
+                            label={stepState.isExporting ? 'Building STEP' : 'Assembly STEP'}
+                            accent="neutral"
+                            icon={<Box className="h-4 w-4" />}
+                            onClick={triggerStepExport}
+                            disabled={stepDisabled}
+                            busy={stepState.isExporting}
+                        />
                     </div>
-                    <p className="mt-3 text-[11px] leading-4 text-gray-500">
-                        STEP export stays disabled until the STEP serializer and CAD boolean backend are implemented.
-                    </p>
+
+                    <div className="mt-3 space-y-2 text-[11px] leading-4">
+                        {stepRuntimeCopy && (
+                            <p className="text-gray-500">{stepRuntimeCopy}</p>
+                        )}
+
+                        {stepFallbackCopy && (
+                            <p className="text-gray-500">{stepFallbackCopy}</p>
+                        )}
+
+                        {stepReadiness.errors.length > 0 && (
+                            <div className="rounded-lg border border-amber-900/40 bg-amber-950/20 px-3 py-2 text-amber-100">
+                                {stepReadiness.errors.map((message) => (
+                                    <p key={message}>{message}</p>
+                                ))}
+                            </div>
+                        )}
+
+                        {stepState.error && (
+                            <div className="rounded-lg border border-red-900/50 bg-red-900/20 px-3 py-2 text-red-100">
+                                <p>{stepState.error}</p>
+                            </div>
+                        )}
+
+                        {stepState.warnings.length > 0 && !stepState.error && (
+                            <div className="rounded-lg border border-amber-900/40 bg-amber-950/20 px-3 py-2 text-amber-100">
+                                {stepState.warnings.map((message) => (
+                                    <p key={message}>{message}</p>
+                                ))}
+                            </div>
+                        )}
+
+                        {stepState.lastFilename && !stepState.isExporting && !stepState.error && (
+                            <p className="text-emerald-300">
+                                Exported {stepState.lastFilename}
+                            </p>
+                        )}
+                    </div>
                 </Section>
             </div>
         </aside>
