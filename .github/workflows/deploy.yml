@@ -14,21 +14,26 @@ jobs:
       - name: Checkout Source
         uses: actions/checkout@v4
 
-      # 2. Ставим Node.js
+      # 2. Ставим pnpm (версия берётся из packageManager в package.json)
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      # 3. Ставим Node.js
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: 'pnpm'
 
-      # 3. Устанавливаем зависимости и собираем
+      # 4. Устанавливаем зависимости и собираем
       - name: Install and Build
         run: |
-          npm ci
-          npm run build
+          pnpm install --frozen-lockfile
+          pnpm build
           mv dist/index.html dist/app.html
         # Теперь у нас есть папка dist с готовой игрой
 
-      # 4. Отправляем папку dist в репозиторий сайта
+      # 5. Отправляем папку dist в репозиторий сайта
       - name: Push to Website Repository
         uses: cpina/github-action-push-to-another-repository@main
         env:
