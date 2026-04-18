@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { calculateNotchGeometry } from '../geometry-engine';
+import { calculateNotchGeometry, calculateUnrolledPoints } from './legacy-geometry-engine';
 import { generateDXF } from '../dxf-service';
 import type { PipeParameters } from '../../types';
 
@@ -7,14 +7,20 @@ describe('Geometry Engine', () => {
     const baseParams: PipeParameters = {
         d1: 100,
         d2: 50,
-        thickness: 5,
+        d1Inner: 94,
+        d2Inner: 46,
+        mainThickness: 3,
+        thickness: 2,
         angle: 90,
         offset: 0,
         weldingGap: 0,
         startAngle: 0,
         paddingD1: 20,
         paddingD2: 20,
-        calcByID: true
+        calcByID: true,
+        connectionType: 'set_on',
+        penetrationMode: 'by_rule',
+        penetrationDepth: 0,
     };
 
     it('should calculate intersection for standard 90 degree T-joint', () => {
@@ -54,5 +60,24 @@ describe('Geometry Engine', () => {
         expect(dxf).toContain('POLYLINE');
         // Hole template has a frame/box added
         expect(dxf).toContain('VERTEX');
+    });
+
+    it('should change the branch template when switching to set_in', () => {
+        const setOn = calculateUnrolledPoints({ ...baseParams, angle: 45 }, 'pipe');
+        const setIn = calculateUnrolledPoints({
+            ...baseParams,
+            angle: 45,
+            connectionType: 'set_in',
+            penetrationDepth: 3,
+        }, 'pipe');
+
+        expect(setOn.length).toBeGreaterThan(0);
+        expect(setIn.length).toBeGreaterThan(0);
+
+        const totalDelta = setOn.reduce((sum, point, index) => {
+            return sum + Math.abs((setIn[index]?.y ?? 0) - point.y);
+        }, 0);
+
+        expect(totalDelta).toBeGreaterThan(0.1);
     });
 });

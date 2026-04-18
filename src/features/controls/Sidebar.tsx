@@ -1,287 +1,389 @@
 import React from 'react';
-import { useParamStore } from '../../store/useParamStore';
 import { useShallow } from 'zustand/react/shallow';
-// import { NumericInput } from '../../components/ui/NumericInput'; (Replaced)
-import { DebouncedInput } from '../../components/ui/DebouncedInput';
+import { AlertCircle, AlertTriangle, Box, Download, FileText, LoaderCircle } from 'lucide-react';
 import { Checkbox } from '../../components/ui/Checkbox';
+import { DebouncedInput } from '../../components/ui/DebouncedInput';
+import { ReadonlyField } from '../../components/ui/ReadonlyField';
 import { Section } from '../../components/ui/Section';
-import { AlertCircle, FileText, Download } from 'lucide-react';
+import { SegmentedControl } from '../../components/ui/SegmentedControl';
+import { useDerivedProject } from '../../hooks/useDerivedProject';
 import { useDownloadAction } from '../../hooks/useDownloadAction';
+import type { ConnectionType, PenetrationMode } from '../../domain/model/types';
+import { useProjectStore } from '../../store/useProjectStore';
 
-// Simplify version access if global not typed, or just assume it works as it was there
 declare const __APP_VERSION__: string;
+
+const connectionOptions: Array<{ label: string; value: ConnectionType }> = [
+    { label: 'Set On', value: 'set_on' },
+    { label: 'Set In', value: 'set_in' },
+];
+
+const penetrationOptions: Array<{ label: string; value: PenetrationMode }> = [
+    { label: 'By Rule', value: 'by_rule' },
+    { label: 'Manual', value: 'by_value' },
+];
+
+function formatMm(value: number) {
+    if (!Number.isFinite(value)) return '0 mm';
+    const rounded = Math.round(value * 100) / 100;
+    return `${Number.isInteger(rounded) ? rounded : rounded.toFixed(2)} mm`;
+}
+
+function ExportButton({
+    label,
+    accent,
+    icon,
+    onClick,
+    disabled,
+    busy = false,
+}: {
+    label: string;
+    accent: 'blue' | 'red' | 'neutral';
+    icon: React.ReactNode;
+    onClick: () => void;
+    disabled: boolean;
+    busy?: boolean;
+}) {
+    const accentClass = accent === 'blue'
+        ? 'border-blue-500/30 bg-blue-500/10 text-blue-100 hover:bg-blue-500/20'
+        : accent === 'red'
+            ? 'border-red-500/30 bg-red-500/10 text-red-100 hover:bg-red-500/20'
+            : 'border-white/10 bg-transparent text-gray-200 hover:bg-white/5';
+
+    return (
+        <button
+            type="button"
+            onClick={onClick}
+            disabled={disabled}
+            className={`flex items-center justify-between gap-3 rounded-xl border px-3.5 py-3 text-left text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${accentClass}`}
+        >
+            <span className="flex items-center gap-2">
+                {icon}
+                {label}
+            </span>
+            {busy && <LoaderCircle className="h-4 w-4 animate-spin" />}
+        </button>
+    );
+}
 
 export const Sidebar: React.FC = () => {
     const {
-        d1,
-        d2,
-        thickness,
-        angle,
-        offset,
-        weldingGap,
-        startAngle,
-        paddingD1,
-        paddingD2,
-        calcByID,
-        errorMessage,
-        updateParam
-    } = useParamStore(
-        useShallow((state) => ({
-            d1: state.d1,
-            d2: state.d2,
-            thickness: state.thickness,
-            angle: state.angle,
-            offset: state.offset,
-            weldingGap: state.weldingGap,
-            startAngle: state.startAngle,
-            paddingD1: state.paddingD1,
-            paddingD2: state.paddingD2,
-            calcByID: state.calcByID,
-            errorMessage: state.errorMessage,
-            updateParam: state.updateParam,
-        }))
-    );
+        project,
+        updateMain,
+        updateBranch,
+        updateConnection,
+        updateExport,
+    } = useProjectStore(useShallow((state) => ({
+        project: state.project,
+        updateMain: state.updateMain,
+        updateBranch: state.updateBranch,
+        updateConnection: state.updateConnection,
+        updateExport: state.updateExport,
+    })));
 
-    const handleDownload = useDownloadAction();
-    const [isExportOpen, setIsExportOpen] = React.useState(false);
-    const exportMenuRef = React.useRef<HTMLDivElement | null>(null);
-    const exportDisabled = !!errorMessage;
-    const maxOffset = React.useMemo(() => {
-        const R1 = d1 / 2;
-        const R2_outer = d2 / 2;
-        const R2_inner = R2_outer - thickness;
-        const R2_calc = Math.max(0, calcByID ? R2_outer : R2_inner);
-        const max = R1 - R2_calc;
-        if (!Number.isFinite(max)) return 0;
-        return Math.max(0, max);
-    }, [d1, d2, thickness, calcByID]);
+    const derivedProject = useDerivedProject();
+    const {
+        download,
+        stepCapability,
+        stepReadiness,
+        stepState,
+    } = useDownloadAction();
+    const errors = derivedProject.validation.errors;
 
-    const maxOffsetLabel = React.useMemo(() => {
-        if (!Number.isFinite(maxOffset)) return '0';
-        const rounded = Math.round(maxOffset * 100) / 100;
-        return Number.isInteger(rounded) ? `${rounded}` : `${rounded}`;
-    }, [maxOffset]);
-
-    React.useEffect(() => {
-        if (!isExportOpen) return;
-
-        const handleClickOutside = (event: MouseEvent) => {
-            if (!exportMenuRef.current) return;
-            if (!exportMenuRef.current.contains(event.target as Node)) {
-                setIsExportOpen(false);
-            }
-        };
-
-        const handleKeyDown = (event: KeyboardEvent) => {
-            if (event.key === 'Escape') {
-                setIsExportOpen(false);
-            }
-        };
-
-        document.addEventListener('mousedown', handleClickOutside);
-        document.addEventListener('keydown', handleKeyDown);
-
-        return () => {
-            document.removeEventListener('mousedown', handleClickOutside);
-            document.removeEventListener('keydown', handleKeyDown);
-        };
-    }, [isExportOpen]);
+    const warnings = derivedProject.validation.warnings;
+    const exportDisabled = errors.length > 0;
+    const stepDisabled = !stepReadiness.isReady || !stepCapability.enabled || stepState.isExporting;
+    const stepRuntimeCopy = !stepCapability.enabled
+        ? stepCapability.reason
+        : stepCapability.localEnabled
+            ? 'Exact assembly STEP export runs locally in a background worker via OpenCascade WASM.'
+            : 'Browser STEP export is unavailable here, using the configured backend fallback.';
+    const stepFallbackCopy = stepCapability.localEnabled && stepCapability.endpoint
+        ? 'If the browser exporter fails, the app falls back to the configured backend automatically.'
+        : stepCapability.localEnabled
+            ? 'No server round-trip is required for STEP export.'
+            : null;
 
     const triggerExport = (type: 'pipe' | 'hole', format: 'dxf' | 'pdf') => {
         if (exportDisabled) return;
-        setIsExportOpen(false);
-        handleDownload(type, format);
+        void download(type, format);
     };
 
-    return (
-        <aside className="w-full md:w-[400px] flex-shrink-0 flex-col bg-surface border-b md:border-b-0 md:border-r border-[#333] shadow-2xl transition-all z-20 flex md:h-full md:overflow-y-auto">
+    const triggerStepExport = () => {
+        void download('assembly', 'step');
+    };
 
-            {/* Header */}
-            <div className="p-4 md:p-6 border-b border-white/10 flex-shrink-0">
+    const versionLabel = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.0';
+
+    return (
+        <aside className="z-20 flex w-full flex-shrink-0 flex-col border-b border-[#333] bg-surface shadow-2xl md:h-full md:w-[430px] md:overflow-y-auto md:border-b-0 md:border-r">
+            <div className="border-b border-white/10 p-5 md:p-6">
                 <div className="flex items-center gap-3">
-                    <h1 className="text-xl md:text-2xl font-bold text-[#e2e2e2]">Pipe Notch Generator</h1>
-                    <span className="text-xs font-semibold text-[#a8c7fa]">V{typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.0'}</span>
+                    <h1 className="text-xl font-bold text-[#e2e2e2] md:text-2xl">Pipe Notch Generator</h1>
+                    <span className="rounded-full bg-[#13213f] px-2.5 py-1 text-[11px] font-semibold text-[#a8c7fa]">
+                        Build {versionLabel}
+                    </span>
                 </div>
-                <p className="mt-2 text-xs md:text-sm text-[#aaaaaa]">
-                    Calculate pipe cutting templates.
-                    <br />
-                    <span className="text-[#ff3333] font-medium">Red line</span> in 3D — ideal cutting contour.
+                <p className="mt-2 max-w-[30ch] text-sm leading-5 text-[#aaaaaa]">
+                    Engineering cut templates with a connection-aware preview and cleaner pipe fit parameters.
                 </p>
+
+                <div className="mt-5 grid grid-cols-3 gap-2.5">
+                    <div className="rounded-2xl bg-white/[0.04] px-3 py-2.5 ring-1 ring-white/8">
+                        <div className="text-[10px] uppercase tracking-wide text-gray-500">Mode</div>
+                        <div className="mt-1 text-sm font-semibold text-gray-100">{derivedProject.summary.connectionLabel}</div>
+                    </div>
+                    <div className="rounded-2xl bg-white/[0.04] px-3 py-2.5 ring-1 ring-white/8">
+                        <div className="text-[10px] uppercase tracking-wide text-gray-500">Main ID</div>
+                        <div className="mt-1 text-sm font-semibold text-gray-100">{formatMm(derivedProject.main.id)}</div>
+                    </div>
+                    <div className="rounded-2xl bg-white/[0.04] px-3 py-2.5 ring-1 ring-white/8">
+                        <div className="text-[10px] uppercase tracking-wide text-gray-500">Branch ID</div>
+                        <div className="mt-1 text-sm font-semibold text-gray-100">{formatMm(derivedProject.branch.id)}</div>
+                    </div>
+                </div>
             </div>
 
-            {/* Main Content */}
-            <div className="flex-1 p-4 md:p-6 md:overflow-y-auto">
-
-                {/* Error Display */}
-                {errorMessage && (
-                    <div className="mb-4 md:mb-6 flex items-start gap-3 rounded-lg border border-red-900/50 bg-red-900/20 p-3 md:p-4 text-red-200">
-                        <AlertCircle className="h-5 w-5 flex-shrink-0 text-red-400 mt-0.5" />
-                        <div className="text-xs md:text-sm font-medium">{errorMessage}</div>
+            <div className="flex-1 p-5 md:overflow-y-auto md:p-6">
+                {errors.length > 0 && (
+                    <div className="mb-5 rounded-xl border border-red-900/50 bg-red-900/20 p-4 text-red-200 md:mb-6">
+                        <div className="flex items-start gap-3">
+                            <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0 text-red-400" />
+                            <div className="space-y-1.5 text-sm">
+                                {errors.map((message) => (
+                                    <p key={message.code}>{message.message}</p>
+                                ))}
+                            </div>
+                        </div>
                     </div>
                 )}
 
-                <Section title="Primary Controls">
-                    <DebouncedInput
-                        label="Main Pipe Diameter (D1)"
-                        value={d1}
-                        onChange={(val) => updateParam('d1', val)}
-                        min={1}
+                {warnings.length > 0 && (
+                    <div className="mb-5 rounded-xl border border-amber-900/50 bg-amber-950/30 p-4 text-amber-100 md:mb-6">
+                        <div className="flex items-start gap-3">
+                            <AlertTriangle className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-300" />
+                            <div className="space-y-1.5 text-sm">
+                                {warnings.map((message) => (
+                                    <p key={message.code}>{message.message}</p>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                <Section title="Main Pipe">
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <DebouncedInput
+                            label="Outer Diameter"
+                            value={project.main.od}
+                            onChange={(value) => updateMain('od', value)}
+                            min={1}
+                        />
+                        <DebouncedInput
+                            label="Wall Thickness"
+                            value={project.main.wall}
+                            onChange={(value) => updateMain('wall', value)}
+                            min={0.1}
+                        />
+                        <ReadonlyField
+                            label="Computed ID"
+                            value={formatMm(derivedProject.main.id)}
+                            helperText="Derived from OD - 2 x wall."
+                            className="sm:col-span-2"
+                        />
+                    </div>
+                </Section>
+
+                <Section title="Branch Pipe">
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <DebouncedInput
+                            label="Outer Diameter"
+                            value={project.branch.od}
+                            onChange={(value) => updateBranch('od', value)}
+                            min={1}
+                        />
+                        <DebouncedInput
+                            label="Wall Thickness"
+                            value={project.branch.wall}
+                            onChange={(value) => updateBranch('wall', value)}
+                            min={0.1}
+                        />
+                        <ReadonlyField
+                            label="Computed ID"
+                            value={formatMm(derivedProject.branch.id)}
+                            helperText="Used for flow opening or ID-based trim."
+                            className="sm:col-span-2"
+                        />
+                    </div>
+                </Section>
+
+                <Section title="Connection">
+                    <SegmentedControl
+                        label="Connection Type"
+                        value={project.connection.type}
+                        options={connectionOptions}
+                        onChange={(value) => updateConnection('type', value)}
+                        helperText="Set On seats on the OD. Set In targets the receiver inner wall."
                     />
-                    <DebouncedInput
-                        label="Branch Pipe Diameter (D2)"
-                        value={d2}
-                        onChange={(val) => updateParam('d2', val)}
-                        min={1}
-                    />
-                    <DebouncedInput
-                        label="Wall Thickness D2 (T)"
-                        value={thickness}
-                        onChange={(val) => updateParam('thickness', val)}
-                        helperText="Used for ID calculation."
-                        min={0}
-                    />
+
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <DebouncedInput
+                            label="Axis Angle"
+                            value={project.connection.axisAngleDeg}
+                            onChange={(value) => updateConnection('axisAngleDeg', value)}
+                            min={1}
+                            max={90}
+                            helperText="1 to 90 degrees."
+                        />
+                        <DebouncedInput
+                            label="Center Offset"
+                            value={project.connection.offset}
+                            onChange={(value) => {
+                                const max = derivedProject.limits.maxOffset;
+                                const clamped = Math.max(-max, Math.min(max, value));
+                                updateConnection('offset', clamped);
+                            }}
+                            min={-derivedProject.limits.maxOffset}
+                            max={derivedProject.limits.maxOffset}
+                            helperText={`Valid range: +/- ${formatMm(derivedProject.limits.maxOffset)}.`}
+                        />
+                        <DebouncedInput
+                            label="Welding Gap"
+                            value={project.connection.weldingGap}
+                            onChange={(value) => updateConnection('weldingGap', value)}
+                            min={0}
+                        />
+                        <DebouncedInput
+                            label="Seam Rotation"
+                            value={project.connection.seamAngleDeg}
+                            onChange={(value) => updateConnection('seamAngleDeg', value)}
+                        />
+                    </div>
+
+                    {project.connection.type === 'set_in' && (
+                        <>
+                            <SegmentedControl
+                                label="Penetration Mode"
+                                value={project.connection.penetrationMode}
+                                options={penetrationOptions}
+                                onChange={(value) => updateConnection('penetrationMode', value)}
+                                helperText="By Rule uses the main wall thickness as the insertion target."
+                            />
+                            {project.connection.penetrationMode === 'by_value' && (
+                                <DebouncedInput
+                                    label="Penetration Depth"
+                                    value={project.connection.penetrationDepth}
+                                    onChange={(value) => updateConnection('penetrationDepth', value)}
+                                    min={0}
+                                    helperText="Manual insertion along the branch axis."
+                                />
+                            )}
+                        </>
+                    )}
+
                     <Checkbox
-                        label="Deep Cut (Sharp Template)"
-                        checked={calcByID}
-                        onChange={(val) => updateParam('calcByID', val)}
-                        helperText="Makes the cut deeper and sharper (using OD logic), ensuring the inner edge fits tight without gaps."
+                        label="Use branch OD for trim"
+                        checked={project.connection.useOuterBranchContour}
+                        onChange={(value) => updateConnection('useOuterBranchContour', value)}
+                        helperText="Turn off to use the branch ID as the reference contour."
                     />
                 </Section>
 
-                <Section title="Geometry Settings">
-                    <DebouncedInput
-                        label="Intersection Angle (°)"
-                        value={angle}
-                        onChange={(val) => updateParam('angle', val)}
-                        helperText="Angle between axes (1-90)."
-                        min={1}
-                        max={90}
-                    />
-                    <DebouncedInput
-                        label="Center Offset"
-                        value={offset}
-                        onChange={(val) => {
-                            const clamped = Math.max(-maxOffset, Math.min(maxOffset, val));
-                            updateParam('offset', clamped);
-                        }}
-                        min={-maxOffset}
-                        max={maxOffset}
-                        helperText={`Offset of branch axis from D1 center. Max: +/- ${maxOffsetLabel} mm.`}
-                    />
-                    <DebouncedInput
-                        label="Welding Gap"
-                        value={weldingGap}
-                        onChange={(val) => updateParam('weldingGap', val)}
-                    />
-                </Section>
-
-                <Section title="Advanced">
-                    <DebouncedInput
-                        label="Seam Rotation (°)"
-                        value={startAngle}
-                        onChange={(val) => updateParam('startAngle', val)}
-                        helperText="Rotates template around pipe axis."
-                    />
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
+                <Section title="Templates">
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                         <DebouncedInput
-                            label="Padding D2 (mm)"
-                            value={paddingD2}
-                            onChange={(val) => updateParam('paddingD2', val)}
+                            label="Branch Margin"
+                            value={project.export.branchPadding}
+                            onChange={(value) => updateExport('branchPadding', value)}
+                            min={0}
                         />
                         <DebouncedInput
-                            label="Padding D1 (mm)"
-                            value={paddingD1}
-                            onChange={(val) => updateParam('paddingD1', val)}
+                            label="Main-Hole Margin"
+                            value={project.export.mainPadding}
+                            onChange={(value) => updateExport('mainPadding', value)}
+                            min={0}
                         />
                     </div>
                 </Section>
-            </div>
 
-            {/* Footer / Actions */}
-            <div className="p-4 md:p-6 border-t border-white/10 bg-[#1a1a1a] flex-shrink-0">
-                <div ref={exportMenuRef} className="relative">
-                    <button
-                        type="button"
-                        onClick={() => setIsExportOpen((open) => !open)}
-                        className="w-full flex items-center justify-center gap-2 rounded-lg bg-primary py-2.5 md:py-3 text-xs md:text-sm font-bold text-[#0b1d46] transition-colors hover:bg-blue-300 disabled:opacity-50 disabled:cursor-not-allowed"
-                        disabled={exportDisabled}
-                        aria-haspopup="menu"
-                        aria-expanded={isExportOpen}
-                    >
-                        <Download className="h-4 w-4" />
-                        Export
-                    </button>
-
-                    <div
-                        className={`absolute bottom-full mb-3 left-0 right-0 rounded-xl border border-white/10 bg-[#161616] shadow-[0_16px_40px_rgba(0,0,0,0.45)] transition-all duration-150 ${
-                            isExportOpen ? 'opacity-100 translate-y-0 pointer-events-auto' : 'opacity-0 translate-y-2 pointer-events-none'
-                        }`}
-                        role="menu"
-                    >
-                        <div className="px-4 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-500">
-                            DXF Export
-                        </div>
-                        <div className="px-3 pb-3 space-y-2">
-                            <button
-                                type="button"
-                                onClick={() => triggerExport('pipe', 'dxf')}
-                                className="w-full flex items-center justify-between gap-3 rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-2 text-left text-xs font-semibold text-blue-100 transition-colors hover:bg-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
-                                disabled={exportDisabled}
-                                role="menuitem"
-                            >
-                                <span className="flex items-center gap-2">
-                                    <Download className="h-4 w-4" />
-                                    Template (D2)
-                                </span>
-                                <span className="text-[10px] uppercase tracking-wider text-blue-200/70">DXF</span>
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => triggerExport('hole', 'dxf')}
-                                className="w-full flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-transparent px-3 py-2 text-left text-xs font-medium text-gray-200 transition-colors hover:bg-white/5 disabled:opacity-50 disabled:cursor-not-allowed"
-                                disabled={exportDisabled}
-                                role="menuitem"
-                            >
-                                <span className="flex items-center gap-2">
-                                    <Download className="h-4 w-4" />
-                                    Hole Template (D1)
-                                </span>
-                                <span className="text-[10px] uppercase tracking-wider text-gray-400">DXF</span>
-                            </button>
-                        </div>
-                        <div className="px-4 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-500 border-t border-white/5">
-                            PDF Export (1:1)
-                        </div>
-                        <div className="px-3 pb-3 space-y-2">
-                            <button
-                                type="button"
-                                onClick={() => triggerExport('pipe', 'pdf')}
-                                className="w-full flex items-center justify-between gap-3 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-left text-xs font-semibold text-red-100 transition-colors hover:bg-red-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
-                                disabled={exportDisabled}
-                                role="menuitem"
-                            >
-                                <span className="flex items-center gap-2">
-                                    <FileText className="h-4 w-4" />
-                                    Template (D2)
-                                </span>
-                                <span className="text-[10px] uppercase tracking-wider text-red-200/70">PDF</span>
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => triggerExport('hole', 'pdf')}
-                                className="w-full flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-transparent px-3 py-2 text-left text-xs font-medium text-gray-200 transition-colors hover:bg-white/5 disabled:opacity-50 disabled:cursor-not-allowed"
-                                disabled={exportDisabled}
-                                role="menuitem"
-                            >
-                                <span className="flex items-center gap-2">
-                                    <FileText className="h-4 w-4" />
-                                    Hole (D1)
-                                </span>
-                                <span className="text-[10px] uppercase tracking-wider text-gray-400">PDF</span>
-                            </button>
-                        </div>
+                <Section title="Export">
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                        <ExportButton
+                            label="Branch DXF"
+                            accent="blue"
+                            icon={<Download className="h-4 w-4" />}
+                            onClick={() => triggerExport('pipe', 'dxf')}
+                            disabled={exportDisabled}
+                        />
+                        <ExportButton
+                            label="Main Hole DXF"
+                            accent="neutral"
+                            icon={<Download className="h-4 w-4" />}
+                            onClick={() => triggerExport('hole', 'dxf')}
+                            disabled={exportDisabled}
+                        />
+                        <ExportButton
+                            label="Branch PDF"
+                            accent="red"
+                            icon={<FileText className="h-4 w-4" />}
+                            onClick={() => triggerExport('pipe', 'pdf')}
+                            disabled={exportDisabled}
+                        />
+                        <ExportButton
+                            label="Main Hole PDF"
+                            accent="neutral"
+                            icon={<FileText className="h-4 w-4" />}
+                            onClick={() => triggerExport('hole', 'pdf')}
+                            disabled={exportDisabled}
+                        />
+                        <ExportButton
+                            label={stepState.isExporting ? 'Building STEP' : 'Assembly STEP'}
+                            accent="neutral"
+                            icon={<Box className="h-4 w-4" />}
+                            onClick={triggerStepExport}
+                            disabled={stepDisabled}
+                            busy={stepState.isExporting}
+                        />
                     </div>
-                </div>
+
+                    <div className="mt-3 space-y-2 text-[11px] leading-4">
+                        {stepRuntimeCopy && (
+                            <p className="text-gray-500">{stepRuntimeCopy}</p>
+                        )}
+
+                        {stepFallbackCopy && (
+                            <p className="text-gray-500">{stepFallbackCopy}</p>
+                        )}
+
+                        {stepReadiness.errors.length > 0 && (
+                            <div className="rounded-lg border border-amber-900/40 bg-amber-950/20 px-3 py-2 text-amber-100">
+                                {stepReadiness.errors.map((message) => (
+                                    <p key={message}>{message}</p>
+                                ))}
+                            </div>
+                        )}
+
+                        {stepState.error && (
+                            <div className="rounded-lg border border-red-900/50 bg-red-900/20 px-3 py-2 text-red-100">
+                                <p>{stepState.error}</p>
+                            </div>
+                        )}
+
+                        {stepState.warnings.length > 0 && !stepState.error && (
+                            <div className="rounded-lg border border-amber-900/40 bg-amber-950/20 px-3 py-2 text-amber-100">
+                                {stepState.warnings.map((message) => (
+                                    <p key={message}>{message}</p>
+                                ))}
+                            </div>
+                        )}
+
+                        {stepState.lastFilename && !stepState.isExporting && !stepState.error && (
+                            <p className="text-emerald-300">
+                                Exported {stepState.lastFilename}
+                            </p>
+                        )}
+                    </div>
+                </Section>
             </div>
         </aside>
     );

@@ -1,32 +1,59 @@
 import React from 'react';
 import * as THREE from 'three';
-import { useParamStore } from '../../store/useParamStore';
-import { useShallow } from 'zustand/react/shallow';
+import { findPrimitiveById } from '../../domain/geometry/solids';
+import { useDerivedProject } from '../../hooks/useDerivedProject';
+import { createFrameTransform, getPrimitiveLength } from './solidPreview';
 
 export const MainPipe: React.FC = () => {
-    const { d1, thickness } = useParamStore(
-        useShallow((state) => ({
-            d1: state.d1,
-            thickness: state.thickness,
-        }))
-    );
+    const derivedProject = useDerivedProject();
+    const mainPrimitive = findPrimitiveById(derivedProject.solids, derivedProject.solids.outputs.mainPrimitiveId);
+    if (!mainPrimitive || mainPrimitive.kind !== 'hollow-cylinder') {
+        return null;
+    }
 
-    const outerRadius = d1 / 2;
-    const safeWall = Math.min(
-        Math.max(thickness > 0 ? thickness : outerRadius * 0.05, 0.5),
-        Math.max(outerRadius - 0.5, 0.5)
-    );
-    const innerRadius = Math.max(outerRadius - safeWall, 0.1);
+    const transform = createFrameTransform(mainPrimitive.frame);
+    const tubeLength = getPrimitiveLength(mainPrimitive);
+    const outerRadius = mainPrimitive.outerRadius;
+    const innerRadius = Math.max(mainPrimitive.innerRadius, 0.1);
+    const transparentPreview = derivedProject.connection.type === 'set_in';
+    const outerOpacity = transparentPreview ? 0.34 : 0.98;
+    const innerOpacity = transparentPreview ? 0.2 : 0.9;
 
     return (
-        <group>
-            <mesh>
-                <cylinderGeometry args={[outerRadius, outerRadius, d1 * 3, 64, 1, true]} />
-                <meshStandardMaterial color="#444444" roughness={0.4} />
+        <group position={transform.position} quaternion={transform.quaternion}>
+            <mesh renderOrder={1} rotation={[Math.PI / 2, 0, 0]}>
+                <cylinderGeometry args={[outerRadius, outerRadius, tubeLength, 64, 1, true]} />
+                <meshStandardMaterial
+                    color="#6a7079"
+                    roughness={0.26}
+                    metalness={0.18}
+                    emissive="#151c28"
+                    emissiveIntensity={0.32}
+                    side={THREE.FrontSide}
+                    transparent={transparentPreview}
+                    opacity={outerOpacity}
+                    depthWrite={!transparentPreview}
+                    polygonOffset={transparentPreview}
+                    polygonOffsetFactor={1}
+                    polygonOffsetUnits={1}
+                />
             </mesh>
-            <mesh>
-                <cylinderGeometry args={[innerRadius, innerRadius, d1 * 3, 64, 1, true]} />
-                <meshStandardMaterial color="#444444" roughness={0.4} side={THREE.BackSide} />
+            <mesh renderOrder={2} rotation={[Math.PI / 2, 0, 0]}>
+                <cylinderGeometry args={[innerRadius, innerRadius, tubeLength, 64, 1, true]} />
+                <meshStandardMaterial
+                    color="#3b4658"
+                    roughness={0.44}
+                    metalness={0.06}
+                    emissive="#111825"
+                    emissiveIntensity={0.26}
+                    side={THREE.BackSide}
+                    transparent={transparentPreview}
+                    opacity={innerOpacity}
+                    depthWrite={!transparentPreview}
+                    polygonOffset={transparentPreview}
+                    polygonOffsetFactor={-1}
+                    polygonOffsetUnits={-1}
+                />
             </mesh>
         </group>
     );

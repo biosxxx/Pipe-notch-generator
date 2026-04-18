@@ -1,33 +1,174 @@
-import { useCallback } from 'react';
-import { useParamStore } from '../store/useParamStore';
-import { useShallow } from 'zustand/react/shallow';
-import { calculateUnrolledPoints } from '../core/geometry-engine';
+import { useCallback, useMemo, useState } from 'react';
 import { createDxfString, DxfWriter } from '../core/dxf-writer';
+import { getExportPoints } from '../core/export-points';
 import { generatePdf } from '../core/pdf-generator';
+import { evaluateStepReadiness } from '../core/validation/stepReadiness';
+import { buildStepExportFilename, buildStepExportPayload } from '../domain/export/step/buildStepExportPayload';
+import { exportStepAssemblyInBrowser } from '../domain/export/step/localStepExport';
+import { getStepCapability } from '../domain/export/step/stepCapability';
+import { downloadStepResponse, readStructuredStepError, triggerBrowserDownload } from '../domain/export/step/stepDownload';
+import { useDerivedProject } from './useDerivedProject';
+
+export type DownloadType = 'pipe' | 'hole' | 'assembly';
+export type DownloadFormat = 'dxf' | 'pdf' | 'step';
+
+interface StepExportState {
+    isExporting: boolean;
+    error: string | null;
+    lastFilename: string | null;
+    warnings: string[];
+}
 
 export function useDownloadAction() {
-    const params = useParamStore(
-        useShallow((state) => ({
-            d1: state.d1,
-            d2: state.d2,
-            thickness: state.thickness,
-            angle: state.angle,
-            offset: state.offset,
-            weldingGap: state.weldingGap,
-            startAngle: state.startAngle,
-            paddingD1: state.paddingD1,
-            paddingD2: state.paddingD2,
-            calcByID: state.calcByID,
-        }))
-    );
+    const derivedProject = useDerivedProject();
+    const params = derivedProject.geometry;
+    const stepCapability = useMemo(() => getStepCapability(), []);
+    const stepReadiness = useMemo(() => evaluateStepReadiness(derivedProject), [derivedProject]);
+    const [stepState, setStepState] = useState<StepExportState>({
+        isExporting: false,
+        error: null,
+        lastFilename: null,
+        warnings: [],
+    });
 
-    const download = useCallback((type: 'pipe' | 'hole', format: 'dxf' | 'pdf' = 'dxf') => {
-        if (format === 'pdf') {
-            generatePdf(params, type);
+    const mergeWarnings = useCallback((...warningGroups: string[][]) => (
+        Array.from(new Set(warningGroups.flat().filter(Boolean)))
+    ), []);
+
+    const download = useCallback(async (type: DownloadType, format: DownloadFormat = 'dxf') => {
+        if (!derivedProject.validation.isValid) {
+            alert(derivedProject.validation.errors[0]?.message || 'Project parameters are invalid.');
             return;
         }
 
-        const points = calculateUnrolledPoints(params, type);
+        if (format === 'step') {
+            if (type !== 'assembly') {
+                setStepState({
+                    isExporting: false,
+                    error: 'STEP export is available only for the assembly output.',
+                    lastFilename: null,
+                    warnings: [],
+                });
+                return;
+            }
+
+            if (!stepReadiness.isReady) {
+                setStepState({
+                    isExporting: false,
+                    error: stepReadiness.errors[0] || 'STEP export is not ready for the current project.',
+                    lastFilename: null,
+                    warnings: stepReadiness.warnings,
+                });
+                return;
+            }
+
+            if (!stepCapability.enabled) {
+                setStepState({
+                    isExporting: false,
+                    error: stepCapability.reason || 'STEP export is not available.',
+                    lastFilename: null,
+                    warnings: stepReadiness.warnings,
+                });
+                return;
+            }
+
+            setStepState({
+                isExporting: true,
+                error: null,
+                lastFilename: null,
+                warnings: [],
+            });
+
+            try {
+                const exportWarnings = [...stepReadiness.warnings];
+
+                if (stepCapability.localEnabled) {
+                    try {
+                        const localResult = await exportStepAssemblyInBrowser(derivedProject);
+                        triggerBrowserDownload(localResult.blob, localResult.filename);
+
+                        setStepState({
+                            isExporting: false,
+                            error: null,
+                            lastFilename: localResult.filename,
+                            warnings: mergeWarnings(exportWarnings, localResult.warnings),
+                        });
+                        return;
+                    } catch (error) {
+                        if (!stepCapability.endpoint) {
+                            throw error;
+                        }
+
+                        const localMessage = error instanceof Error
+                            ? error.message
+                            : 'Browser STEP export failed.';
+                        exportWarnings.push(`Browser STEP export failed, using backend fallback: ${localMessage}`);
+                    }
+                }
+
+                if (!stepCapability.endpoint) {
+                    throw new Error(stepCapability.reason || 'STEP export is not available.');
+                }
+
+                const payload = buildStepExportPayload(derivedProject);
+                const fallbackFilename = buildStepExportFilename(payload);
+                const controller = new AbortController();
+                const timeoutId = window.setTimeout(() => controller.abort(), stepCapability.timeoutMs);
+
+                try {
+                    const response = await fetch(stepCapability.endpoint, {
+                        method: 'POST',
+                        headers: {
+                            'content-type': 'application/json',
+                            accept: 'application/step, model/step, application/octet-stream, application/json',
+                        },
+                        body: JSON.stringify(payload),
+                        signal: controller.signal,
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(await readStructuredStepError(response));
+                    }
+
+                    const result = await downloadStepResponse(response, fallbackFilename);
+
+                    setStepState({
+                        isExporting: false,
+                        error: null,
+                        lastFilename: result?.filename ?? fallbackFilename,
+                        warnings: mergeWarnings(exportWarnings, result?.meta.warnings ?? []),
+                    });
+                } finally {
+                    window.clearTimeout(timeoutId);
+                }
+            } catch (error) {
+                const message = error instanceof Error
+                    ? error.name === 'AbortError'
+                        ? `STEP export timed out after ${Math.round(stepCapability.timeoutMs / 1000)} seconds.`
+                        : error.message
+                    : 'STEP export failed.';
+
+                setStepState({
+                    isExporting: false,
+                    error: message,
+                    lastFilename: null,
+                    warnings: stepReadiness.warnings,
+                });
+            }
+
+            return;
+        }
+
+        if (format === 'pdf') {
+            setStepState((current) => ({
+                ...current,
+                error: null,
+            }));
+            generatePdf(params, type, derivedProject);
+            return;
+        }
+
+        const points = getExportPoints(type, params, derivedProject);
 
         if (points.length === 0) {
             alert("Could not generate valid geometry for export.");
@@ -89,16 +230,25 @@ export function useDownloadAction() {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
 
-        const filename = `notch_D${params.d2}_on_D${params.d1}_${params.angle}deg_${type}.dxf`;
+        const normalizedFilename = `notch_${derivedProject.connection.type}_${params.d2}x${params.thickness}_on_${params.d1}x${params.mainThickness}_${params.angle}deg_${type}.dxf`;
 
         a.href = url;
-        a.download = filename;
+        a.download = normalizedFilename;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
 
-    }, [params]);
+        setStepState((current) => ({
+            ...current,
+            error: null,
+        }));
+    }, [derivedProject, mergeWarnings, params, stepCapability, stepReadiness]);
 
-    return download;
+    return {
+        download,
+        stepCapability,
+        stepReadiness,
+        stepState,
+    };
 }
